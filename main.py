@@ -169,7 +169,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 def write_stats() -> None:
     """Write bot statistics to a file"""
     with open('stats.json', 'w+') as stats_file:
-        json.dump(stats_file)
+        json.dump(stats, stats_file)
 
 
 def main() -> None:
