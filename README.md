@@ -6,4 +6,4 @@ Telegram bot for downloading images in original quality from Twitter. See here [
 2. Set bot options [here](https://github.com/skrimix/twitter_downloader_bot/blob/master/main.py#L17-19)
 3. Install dependencies with `pip install -r requirements.txt`
 4. Start the bot with `python main.py`
-5. Now you can use commands `/start`, `/help` or send tweet links
+5. Now you can use commands `/start`, `/help`, `/stats` or send tweet links

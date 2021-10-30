@@ -1,7 +1,9 @@
 import html
 import json
+from json.decoder import JSONDecodeError
 import logging
 import traceback
+import json
 from urllib.parse import urlsplit
 from io import StringIO
 
@@ -24,6 +26,13 @@ logger = logging.getLogger(__name__)
 
 # Compile regex for searching tweet ID in messages
 r = re.compile(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)")
+
+# Initialize statistics
+try:
+    with open('stats.json', 'r+') as stats_file:
+        stats = json.load(stats_file)
+except (FileNotFoundError, JSONDecodeError):
+    stats = {'messages_handled': 0, 'media_downloaded': 0, 'errors': 0}
 
 
 def log_handling_info(update: Update, message) -> None:
@@ -79,6 +88,8 @@ def error_handler(update: object, context: CallbackContext) -> None:
 
     if update:
         update.effective_message.reply_text(f'Error\n{context.error.__class__.__name__}: {str(context.error)}')
+    
+    stats['errors'] += 1
 
 
 def start(update: Update, context: CallbackContext) -> None:
@@ -96,6 +107,12 @@ def help_command(update: Update, context: CallbackContext) -> None:
     update.message.reply_text('Send tweet URL here and I will download original quality images from that tweet for you')
 
 
+def stats_command(update: Update, context: CallbackContext) -> None:
+    """Send stats when the command /help is issued."""
+    update.message.reply_markdown_v2(f'*Bot stats:*\nMessages handled: *{stats.get("messages_handled")}*'
+    f'\nMedia downloaded: *{stats.get("media_downloaded")}*\nErrors count: *{stats.get("errors")}*')
+
+
 def deny_access(update: Update, context: CallbackContext) -> None:
     """Deny unauthorized access"""
     log_handling_info(update, f'Access denied to {update.effective_user.full_name} (@{update.effective_user.username}),'
@@ -106,6 +123,7 @@ def deny_access(update: Update, context: CallbackContext) -> None:
 def handle_message(update: Update, context: CallbackContext) -> None:
     """Handle the user message. Reply with found supported media"""
     log_handling_info(update, 'Received message: ' + update.message.text.replace("\n", ""))
+    stats['messages_handled'] += 1
 
     # Search for tweet ID in received message
     m = r.search(update.message.text)
@@ -139,12 +157,19 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         try:
             update.message.reply_media_group(media_group, quote=True)
             log_handling_info(update, f'Sent media group (len {len(media_group)})')
+            stats['media_downloaded'] += len(media_group)
         except error.TelegramError as e:
             log_handling_error(update, 'Error occurred while sending media:\n' + e.message)
             update.message.reply_text('Error:\n' + e.message)
     else:
         log_handling_info(update, 'No supported media found')
         update.message.reply_text('No supported media found', quote=True)
+
+
+def write_stats() -> None:
+    """Write bot statistics to a file"""
+    with open('stats.json', 'w+') as stats_file:
+        json.dump(stats_file)
 
 
 def main() -> None:
@@ -162,6 +187,7 @@ def main() -> None:
         # on different commands - answer in Telegram
         dispatcher.add_handler(CommandHandler("start", start, Filters.chat(DEVELOPER_ID)))
         dispatcher.add_handler(CommandHandler("help", help_command, Filters.chat(DEVELOPER_ID)))
+        dispatcher.add_handler(CommandHandler("stats", stats_command, Filters.chat(DEVELOPER_ID)))
 
         # on non command i.e message - echo the message on Telegram
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.chat(DEVELOPER_ID),
@@ -171,6 +197,7 @@ def main() -> None:
         # on different commands - answer in Telegram
         dispatcher.add_handler(CommandHandler("start", start))
         dispatcher.add_handler(CommandHandler("help", help_command))
+        dispatcher.add_handler(CommandHandler("stats", stats_command))
 
         # on non command i.e message - echo the message on Telegram
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message, run_async=True))
@@ -184,6 +211,9 @@ def main() -> None:
     # SIGTERM or SIGABRT. This should be used most of the time, since
     # start_polling() is non-blocking and will stop the bot gracefully.
     updater.idle()
+
+    # Write bot statistics to a file
+    write_stats()
 
 
 if __name__ == '__main__':
