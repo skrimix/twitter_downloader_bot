@@ -96,7 +96,7 @@ def help_command(update: Update, context: CallbackContext) -> None:
 def deny_access(update: Update, context: CallbackContext) -> None:
     """Deny unauthorized access"""
     log_handling_info(update, f'Access denied to {update.effective_user.full_name} (@{update.effective_user.username}),'
-                              f' userId {update.effective_user.id}, chatId {update.effective_chat.id}')
+                              f' userId {update.effective_user.id}')
     update.message.reply_text(f'Access denied. Your id ({update.effective_user.id}) is not in whitelist')
 
 
