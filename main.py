@@ -5,7 +5,10 @@ import traceback
 from urllib.parse import urlsplit
 from io import StringIO
 
-import re2
+try:
+    import re2 as re
+except ImportError:
+    import re
 import snscrape.modules.twitter as sntwitter
 import telegram.error
 from telegram import Update, InputMediaDocument, error, ParseMode, constants
@@ -20,7 +23,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Compile regex for searching tweet ID in messages
-r = re2.compile(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)")
+r = re.compile(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)")
 
 
 def log_handling_info(update: Update, message) -> None:
