@@ -150,7 +150,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 
             media_group.append(InputMediaDocument(media=new_url))
         else:
-            log_handling_info(update, f'Ignoring unsupported media: {type(twitter_media)}')
+            log_handling_info(update, f'Skipping unsupported media: {twitter_media.__class__.__name__}')
 
     # Check if we have found any media to send
     if media_group:
