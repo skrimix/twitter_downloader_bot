@@ -13,7 +13,7 @@ except ImportError:
     import re
 import snscrape.modules.twitter as sntwitter
 import telegram.error
-from telegram import Update, InputMediaDocument, error, ParseMode, constants
+from telegram import Update, InputMediaDocument, InputMediaAnimation, error, ParseMode, constants
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 BOT_TOKEN = "${{ secrets.bot_token }}"  # Your telegram bot token
@@ -138,8 +138,8 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     # Scrape a single tweet by ID
     tweet = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
     media_group = []
+    gif_url = None
     for twitter_media in tweet.media:
-        # We support only photos (for now)
         if type(twitter_media) == sntwitter.Photo:
             log_handling_info(update, f'Photo[{len(media_group)}] url: {twitter_media.fullUrl}')
             parsed_url = urlsplit(twitter_media.fullUrl)
@@ -149,11 +149,17 @@ def handle_message(update: Update, context: CallbackContext) -> None:
             log_handling_info(update, 'New photo url: ' + new_url)
 
             media_group.append(InputMediaDocument(media=new_url))
+        if type(twitter_media) == sntwitter.Gif:
+            gif_url = twitter_media.variants[0].url
+            log_handling_info(update, f'Gif url: {gif_url}')
         else:
             log_handling_info(update, f'Skipping unsupported media: {twitter_media.__class__.__name__}')
 
-    # Check if we have found any media to send
-    if media_group:
+    # Check if we have found gif to send
+    if gif_url:
+        update.message.reply_animation(animation=gif_url, quote=True)
+    # Check if we have found any other media to send
+    elif media_group:
         try:
             update.message.reply_media_group(media_group, quote=True)
             log_handling_info(update, f'Sent media group (len {len(media_group)})')
