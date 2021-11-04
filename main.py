@@ -1,11 +1,11 @@
 import html
 import json
-from json.decoder import JSONDecodeError
 import logging
 import traceback
-import json
-from urllib.parse import urlsplit
 from io import StringIO
+from os import getpid, kill
+from signal import SIGTERM
+from urllib.parse import urlsplit
 
 try:
     import re2 as re
@@ -13,7 +13,7 @@ except ImportError:
     import re
 import snscrape.modules.twitter as sntwitter
 import telegram.error
-from telegram import Update, InputMediaDocument, InputMediaAnimation, error, ParseMode, constants
+from telegram import Update, InputMediaDocument, error, ParseMode, constants
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 BOT_TOKEN = "${{ secrets.bot_token }}"  # Your telegram bot token
@@ -31,7 +31,7 @@ r = re.compile(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)")
 try:
     with open('stats.json', 'r+') as stats_file:
         stats = json.load(stats_file)
-except (FileNotFoundError, JSONDecodeError):
+except (FileNotFoundError, json.decoder.JSONDecodeError):
     stats = {'messages_handled': 0, 'media_downloaded': 0, 'errors': 0}
 
 
@@ -48,6 +48,10 @@ def error_handler(update: object, context: CallbackContext) -> None:
 
     if type(context.error) == telegram.error.Unauthorized:
         return
+
+    if type(context.error) == telegram.error.Conflict:
+        logger.critical(msg="Requests conflict found, exiting...")
+        kill(getpid(), SIGTERM)
 
     # Log the error before we do anything else, so we can see it even if something breaks.
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
