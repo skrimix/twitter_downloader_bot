@@ -24,14 +24,14 @@ jobs:
       - name: Insert bot telegram token
         uses: jwsi/secret-parser@v1
         with:
-          filename: main.py
+          filename: config.py
           secret-name: bot_token
           secret-value: ${{ secrets.BOT_TOKEN }}
       
       - name: Insert developer id
         uses: jwsi/secret-parser@v1
         with:
-          filename: main.py
+          filename: config.py
           secret-name: developer_id
           secret-value: ${{ secrets.DEVELOPER_ID }}
       

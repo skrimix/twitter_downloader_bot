@@ -7,6 +7,8 @@ from os import getpid, kill
 from signal import SIGTERM
 from urllib.parse import urlsplit
 
+from config import BOT_TOKEN, DEVELOPER_ID, IS_BOT_PRIVATE
+
 try:
     import re2 as re
 except ImportError:
@@ -16,9 +18,6 @@ import telegram.error
 from telegram import Update, InputMediaDocument, error, ParseMode, constants
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
-BOT_TOKEN = "${{ secrets.bot_token }}"  # Your telegram bot token
-DEVELOPER_ID = int("${{ secrets.developer_id }}")  # Your telegram id (used for error reporting and private mode)
-IS_BOT_PRIVATE = False  # Change this to True to make bot private
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
