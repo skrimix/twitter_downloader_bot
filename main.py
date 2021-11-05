@@ -111,9 +111,17 @@ def help_command(update: Update, context: CallbackContext) -> None:
 
 
 def stats_command(update: Update, context: CallbackContext) -> None:
-    """Send stats when the command /help is issued."""
+    """Send stats when the command /stats is issued."""
     update.message.reply_markdown_v2(f'*Bot stats:*\nMessages handled: *{stats.get("messages_handled")}*'
     f'\nMedia downloaded: *{stats.get("media_downloaded")}*\nErrors count: *{stats.get("errors")}*')
+
+
+def reset_stats_command(update: Update, context: CallbackContext) -> None:
+    """Reset stats when the command /resetstats is issued."""
+    global stats
+    stats = {'messages_handled': 0, 'media_downloaded': 0, 'errors': 0}
+    write_stats()
+    update.message.reply_text("Bot stats have been reset.")
 
 
 def deny_access(update: Update, context: CallbackContext) -> None:
@@ -189,6 +197,9 @@ def main() -> None:
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
 
+    dispatcher.add_handler(CommandHandler("stats", stats_command, Filters.chat(DEVELOPER_ID)))
+    dispatcher.add_handler(CommandHandler("resetstats", reset_stats_command, Filters.chat(DEVELOPER_ID)))
+
     if IS_BOT_PRIVATE:
         # Deny access to everyone but developer
         dispatcher.add_handler(MessageHandler(~Filters.chat(DEVELOPER_ID), deny_access))
@@ -196,7 +207,6 @@ def main() -> None:
         # on different commands - answer in Telegram
         dispatcher.add_handler(CommandHandler("start", start, Filters.chat(DEVELOPER_ID)))
         dispatcher.add_handler(CommandHandler("help", help_command, Filters.chat(DEVELOPER_ID)))
-        dispatcher.add_handler(CommandHandler("stats", stats_command, Filters.chat(DEVELOPER_ID)))
 
         # on non command i.e message - echo the message on Telegram
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.chat(DEVELOPER_ID),
@@ -206,7 +216,6 @@ def main() -> None:
         # on different commands - answer in Telegram
         dispatcher.add_handler(CommandHandler("start", start))
         dispatcher.add_handler(CommandHandler("help", help_command))
-        dispatcher.add_handler(CommandHandler("stats", stats_command))
 
         # on non command i.e message - echo the message on Telegram
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message, run_async=True))
