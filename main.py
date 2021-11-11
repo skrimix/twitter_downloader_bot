@@ -7,16 +7,16 @@ from os import getpid, kill
 from signal import SIGTERM
 from urllib.parse import urlsplit
 
-from config import BOT_TOKEN, DEVELOPER_ID, IS_BOT_PRIVATE
-
 try:
     import re2 as re
 except ImportError:
     import re
 import snscrape.modules.twitter as sntwitter
 import telegram.error
-from telegram import Update, InputMediaDocument, error, ParseMode, constants
+from telegram import Update, InputMediaDocument, ParseMode, constants
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+
+from config import BOT_TOKEN, DEVELOPER_ID, IS_BOT_PRIVATE
 
 
 # Enable logging
@@ -28,7 +28,7 @@ r = re.compile(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)")
 
 # Initialize statistics
 try:
-    with open('stats.json', 'r+') as stats_file:
+    with open('stats.json', 'r+', encoding="utf8") as stats_file:
         stats = json.load(stats_file)
 except (FileNotFoundError, json.decoder.JSONDecodeError):
     stats = {'messages_handled': 0, 'media_downloaded': 0, 'errors': 0}
@@ -46,10 +46,10 @@ def log_handling_error(update: Update, message) -> None:
 def error_handler(update: object, context: CallbackContext) -> None:
     """Log the error and send a telegram message to notify the developer."""
 
-    if type(context.error) == telegram.error.Unauthorized:
+    if isinstance(context.error, telegram.error.Unauthorized):
         return
 
-    if type(context.error) == telegram.error.Conflict:
+    if isinstance(context.error, telegram.error.Conflict):
         logger.critical(msg="Requests conflict found, exiting...")
         kill(getpid(), SIGTERM)
 
@@ -153,7 +153,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     media_group = []
     gif_url = None
     for twitter_media in tweet.media:
-        if type(twitter_media) == sntwitter.Photo:
+        if isinstance(twitter_media, sntwitter.Photo):
             log_handling_info(update, f'Photo[{len(media_group)}] url: {twitter_media.fullUrl}')
             parsed_url = urlsplit(twitter_media.fullUrl)
 
@@ -162,10 +162,10 @@ def handle_message(update: Update, context: CallbackContext) -> None:
             log_handling_info(update, 'New photo url: ' + new_url)
 
             media_group.append(InputMediaDocument(media=new_url))
-        elif type(twitter_media) == sntwitter.Gif:
+        elif isinstance(twitter_media, sntwitter.Gif):
             gif_url = twitter_media.variants[0].url
             log_handling_info(update, f'Gif url: {gif_url}')
-        elif type(twitter_media) == sntwitter.Video:
+        elif isinstance(twitter_media, sntwitter.Video):
             # Find video variant with the best bitrate
             video = max((video_variant for video_variant in twitter_media.variants
                          if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
@@ -183,7 +183,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
             update.message.reply_media_group(media_group, quote=True)
             log_handling_info(update, f'Sent media group (len {len(media_group)})')
             stats['media_downloaded'] += len(media_group)
-        except error.TelegramError as e:
+        except telegram.error.TelegramError as e:
             log_handling_error(update, 'Error occurred while sending media:\n' + e.message)
             update.message.reply_text('Error:\n' + e.message)
     else:
@@ -193,8 +193,8 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 
 def write_stats() -> None:
     """Write bot statistics to a file"""
-    with open('stats.json', 'w+') as stats_file:
-        json.dump(stats, stats_file)
+    with open('stats.json', 'w+', encoding="utf8") as _stats_file:
+        json.dump(stats, _stats_file)
 
 
 def main() -> None:
