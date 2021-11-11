@@ -1,5 +1,5 @@
-# Twitter Image Downloader Bot
-Telegram bot for downloading images in original quality from Twitter. See here [@twitterimage_bot](http://t.me/twitterimage_bot)
+# Twitter Media Downloader Bot
+Telegram bot for downloading media from Twitter in best available quality. See here [@twitterimage_bot](http://t.me/twitterimage_bot)
 
 ## Usage
 1. Clone repository
