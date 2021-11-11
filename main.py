@@ -34,6 +34,7 @@ except (FileNotFoundError, json.decoder.JSONDecodeError):
     stats = {'messages_handled': 0, 'media_downloaded': 0, 'errors': 0}
 
 
+# TODO: merge logging functions
 def log_handling_info(update: Update, message) -> None:
     logger.info(f'[{update.effective_chat.id}:{update.effective_message.message_id}] {message}')
 
@@ -64,7 +65,7 @@ def error_handler(update: object, context: CallbackContext) -> None:
     # You might need to add some logic to deal with messages longer than the 4096 character limit.
     update_str = update.to_dict() if isinstance(update, Update) else str(update)
     message = (
-        f'An exception was raised during runtime\n'
+        f'An exception was raised in runtime\n'
         f'<pre>update = {html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))}'
         '</pre>\n\n'
         f'<pre>context.chat_data = {html.escape(str(context.chat_data))}</pre>\n\n'
@@ -91,7 +92,7 @@ def error_handler(update: object, context: CallbackContext) -> None:
 
     if update:
         update.effective_message.reply_text(f'Error\n{context.error.__class__.__name__}: {str(context.error)}')
-    
+
     stats['errors'] += 1
 
 
@@ -101,19 +102,20 @@ def start(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
     update.message.reply_markdown_v2(
         fr'Hi {user.mention_markdown_v2()}\!' +
-        '\nSend tweet URL here and I will download original quality images from that tweet for you'
+        '\nSend tweet link here and I will download media in best available quality for you'
     )
 
 
 def help_command(update: Update, context: CallbackContext) -> None:
     """Send a message when the command /help is issued."""
-    update.message.reply_text('Send tweet URL here and I will download original quality images from that tweet for you')
+    update.message.reply_text('Send tweet link here and I will download media in best available quality for you')
 
 
 def stats_command(update: Update, context: CallbackContext) -> None:
     """Send stats when the command /stats is issued."""
     update.message.reply_markdown_v2(f'*Bot stats:*\nMessages handled: *{stats.get("messages_handled")}*'
-    f'\nMedia downloaded: *{stats.get("media_downloaded")}*\nErrors count: *{stats.get("errors")}*')
+                                     f'\nMedia downloaded: *{stats.get("media_downloaded")}*\n'
+                                     f'Errors count: *{stats.get("errors")}*')
 
 
 def reset_stats_command(update: Update, context: CallbackContext) -> None:
@@ -140,10 +142,10 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     m = r.search(update.message.text)
     if m:
         tweet_id = m.group(1)
-        log_handling_info(update, 'Found url to Tweet ID ' + tweet_id)
+        log_handling_info(update, f'Found Tweet ID {tweet_id} in link')
     else:
-        log_handling_info(update, 'No valid tweet url found')
-        update.message.reply_text('No valid tweet url found', quote=True)
+        log_handling_info(update, 'No valid tweet link found')
+        update.message.reply_text('No valid tweet link found', quote=True)
         return
 
     # Scrape a single tweet by ID
@@ -160,9 +162,15 @@ def handle_message(update: Update, context: CallbackContext) -> None:
             log_handling_info(update, 'New photo url: ' + new_url)
 
             media_group.append(InputMediaDocument(media=new_url))
-        if type(twitter_media) == sntwitter.Gif:
+        elif type(twitter_media) == sntwitter.Gif:
             gif_url = twitter_media.variants[0].url
             log_handling_info(update, f'Gif url: {gif_url}')
+        elif type(twitter_media) == sntwitter.Video:
+            # Find video variant with the best bitrate
+            video = max((video_variant for video_variant in twitter_media.variants
+                         if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
+            log_handling_info(update, 'Selected video variant: ' + str(video))
+            media_group.append(InputMediaDocument(media=video.url))
         else:
             log_handling_info(update, f'Skipping unsupported media: {twitter_media.__class__.__name__}')
 
