@@ -13,7 +13,7 @@ except ImportError:
     import re
 import snscrape.modules.twitter as sntwitter
 import telegram.error
-from telegram import Update, InputMediaDocument, ParseMode, constants
+from telegram import Update, InputMediaDocument, ParseMode, constants, BotCommand, BotCommandScopeChat
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 from config import BOT_TOKEN, DEVELOPER_ID, IS_BOT_PRIVATE
@@ -205,6 +205,9 @@ def main() -> None:
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
 
+    # Get the bot to set commands menu
+    bot = dispatcher.bot
+
     dispatcher.add_handler(CommandHandler("stats", stats_command, Filters.chat(DEVELOPER_ID)))
     dispatcher.add_handler(CommandHandler("resetstats", reset_stats_command, Filters.chat(DEVELOPER_ID)))
 
@@ -216,17 +219,28 @@ def main() -> None:
         dispatcher.add_handler(CommandHandler("start", start, Filters.chat(DEVELOPER_ID)))
         dispatcher.add_handler(CommandHandler("help", help_command, Filters.chat(DEVELOPER_ID)))
 
-        # on non command i.e message - echo the message on Telegram
+        # on non command i.e message - handle the message
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.chat(DEVELOPER_ID),
                                               handle_message, run_async=True))
+
+        # Set commands menu
+        commands = [BotCommand("start", "Start the bot"), BotCommand("help", "Help message")]
+        bot.set_my_commands(commands, scope=BotCommandScopeChat(DEVELOPER_ID))
 
     else:
         # on different commands - answer in Telegram
         dispatcher.add_handler(CommandHandler("start", start))
         dispatcher.add_handler(CommandHandler("help", help_command))
 
-        # on non command i.e message - echo the message on Telegram
+        # on non command i.e message - handle the message
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message, run_async=True))
+
+        # Set commands menu
+        public_commands = [BotCommand("start", "Start the bot"), BotCommand("help", "Help message")]
+        dev_commands = public_commands + [BotCommand("stats", "Get bot statistics"),
+                                          BotCommand("resetstats", "Reset bot statistics")]
+        bot.set_my_commands(public_commands)
+        bot.set_my_commands(dev_commands, scope=BotCommandScopeChat(DEVELOPER_ID))
 
     dispatcher.add_error_handler(error_handler)
 
