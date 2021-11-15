@@ -94,7 +94,8 @@ def error_handler(update: object, context: CallbackContext) -> None:
                                   caption='An exception was raised during runtime\n')
 
     if update:
-        update.effective_message.reply_text(f'Error\n{context.error.__class__.__name__}: {str(context.error)}')
+        error_class_name = ".".join([context.error.__class__.__module__, context.error.__class__.__qualname__])
+        update.effective_message.reply_text(f'Error\n{error_class_name}: {str(context.error)}')
 
     stats['errors'] += 1
 
