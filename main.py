@@ -152,27 +152,28 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     tweet = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
     media_group = []
     gif_url = None
-    for twitter_media in tweet.media:
-        if isinstance(twitter_media, sntwitter.Photo):
-            log_handling_info(update, f'Photo[{len(media_group)}] url: {twitter_media.fullUrl}')
-            parsed_url = urlsplit(twitter_media.fullUrl)
+    if tweet.media:
+        for twitter_media in tweet.media:
+            if isinstance(twitter_media, sntwitter.Photo):
+                log_handling_info(update, f'Photo[{len(media_group)}] url: {twitter_media.fullUrl}')
+                parsed_url = urlsplit(twitter_media.fullUrl)
 
-            # Change requested quality to 'orig'
-            new_url = parsed_url._replace(query='format=jpg&name=orig').geturl()
-            log_handling_info(update, 'New photo url: ' + new_url)
+                # Change requested quality to 'orig'
+                new_url = parsed_url._replace(query='format=jpg&name=orig').geturl()
+                log_handling_info(update, 'New photo url: ' + new_url)
 
-            media_group.append(InputMediaDocument(media=new_url))
-        elif isinstance(twitter_media, sntwitter.Gif):
-            gif_url = twitter_media.variants[0].url
-            log_handling_info(update, f'Gif url: {gif_url}')
-        elif isinstance(twitter_media, sntwitter.Video):
-            # Find video variant with the best bitrate
-            video = max((video_variant for video_variant in twitter_media.variants
-                         if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
-            log_handling_info(update, 'Selected video variant: ' + str(video))
-            media_group.append(InputMediaDocument(media=video.url))
-        else:
-            log_handling_info(update, f'Skipping unsupported media: {twitter_media.__class__.__name__}')
+                media_group.append(InputMediaDocument(media=new_url))
+            elif isinstance(twitter_media, sntwitter.Gif):
+                gif_url = twitter_media.variants[0].url
+                log_handling_info(update, f'Gif url: {gif_url}')
+            elif isinstance(twitter_media, sntwitter.Video):
+                # Find video variant with the best bitrate
+                video = max((video_variant for video_variant in twitter_media.variants
+                             if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
+                log_handling_info(update, 'Selected video variant: ' + str(video))
+                media_group.append(InputMediaDocument(media=video.url))
+            else:
+                log_handling_info(update, f'Skipping unsupported media: {twitter_media.__class__.__name__}')
 
     # Check if we have found gif to send
     if gif_url:
