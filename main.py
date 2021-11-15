@@ -24,9 +24,11 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Compile regex for searching tweet ID in messages
+# TODO: look into parsing twitter.com/i/web/TWEET_ID links
 r = re.compile(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)")
 
 # Initialize statistics
+# TODO: add user stats and use PicklePersistence
 try:
     with open('stats.json', 'r+', encoding="utf8") as stats_file:
         stats = json.load(stats_file)
@@ -43,6 +45,7 @@ def log_handling_error(update: Update, message) -> None:
     logger.error(f'[{update.effective_chat.id}:{update.effective_message.message_id}] {message}')
 
 
+# TODO: ignore error when tweet doesn't exist
 def error_handler(update: object, context: CallbackContext) -> None:
     """Log the error and send a telegram message to notify the developer."""
 
@@ -180,13 +183,9 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         update.message.reply_animation(animation=gif_url, quote=True)
     # Check if we have found any other media to send
     elif media_group:
-        try:
-            update.message.reply_media_group(media_group, quote=True)
-            log_handling_info(update, f'Sent media group (len {len(media_group)})')
-            stats['media_downloaded'] += len(media_group)
-        except telegram.error.TelegramError as e:
-            log_handling_error(update, 'Error occurred while sending media:\n' + e.message)
-            update.message.reply_text('Error:\n' + e.message)
+        update.message.reply_media_group(media_group, quote=True)
+        log_handling_info(update, f'Sent media group (len {len(media_group)})')
+        stats['media_downloaded'] += len(media_group)
     else:
         log_handling_info(update, 'No supported media found')
         update.message.reply_text('No supported media found', quote=True)
