@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 r = re.compile(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)")
 
 # Initialize statistics
-# TODO: add user stats and use PicklePersistence
+# TODO: add user stats and use PicklePersistence, remove error counting
 try:
     with open('stats.json', 'r+', encoding="utf8") as stats_file:
         stats = json.load(stats_file)
@@ -36,13 +36,9 @@ except (FileNotFoundError, json.decoder.JSONDecodeError):
     stats = {'messages_handled': 0, 'media_downloaded': 0, 'errors': 0}
 
 
-# TODO: merge logging functions
-def log_handling_info(update: Update, message) -> None:
-    logger.info(f'[{update.effective_chat.id}:{update.effective_message.message_id}] {message}')
-
-
-def log_handling_error(update: Update, message) -> None:
-    logger.error(f'[{update.effective_chat.id}:{update.effective_message.message_id}] {message}')
+def log_handling(update: Update, level: str, message: str) -> None:
+    _level = getattr(logging, level.upper())
+    logger.log(_level, f'[{update.effective_chat.id}:{update.effective_message.message_id}] {message}')
 
 
 # TODO: ignore error when tweet doesn't exist
@@ -102,7 +98,7 @@ def error_handler(update: object, context: CallbackContext) -> None:
 
 def start(update: Update, context: CallbackContext) -> None:
     """Send a message when the command /start is issued."""
-    log_handling_info(update, f'Received /start command from userId {update.effective_user.id}')
+    log_handling(update, 'info', f'Received /start command from userId {update.effective_user.id}')
     user = update.effective_user
     update.message.reply_markdown_v2(
         fr'Hi {user.mention_markdown_v2()}\!' +
@@ -132,23 +128,23 @@ def reset_stats_command(update: Update, context: CallbackContext) -> None:
 
 def deny_access(update: Update, context: CallbackContext) -> None:
     """Deny unauthorized access"""
-    log_handling_info(update, f'Access denied to {update.effective_user.full_name} (@{update.effective_user.username}),'
-                              f' userId {update.effective_user.id}')
+    log_handling(update, 'info', f'Access denied to {update.effective_user.full_name} (@{update.effective_user.username}),'
+                                 f' userId {update.effective_user.id}')
     update.message.reply_text(f'Access denied. Your id ({update.effective_user.id}) is not in whitelist')
 
 
 def handle_message(update: Update, context: CallbackContext) -> None:
     """Handle the user message. Reply with found supported media"""
-    log_handling_info(update, 'Received message: ' + update.message.text.replace("\n", ""))
+    log_handling(update, 'info', 'Received message: ' + update.message.text.replace("\n", ""))
     stats['messages_handled'] += 1
 
     # Search for tweet ID in received message
     m = r.search(update.message.text)
     if m:
         tweet_id = m.group(1)
-        log_handling_info(update, f'Found Tweet ID {tweet_id} in link')
+        log_handling(update, 'info', f'Found Tweet ID {tweet_id} in link')
     else:
-        log_handling_info(update, 'No valid tweet link found')
+        log_handling(update, 'info', 'No valid tweet link found')
         update.message.reply_text('No valid tweet link found', quote=True)
         return
 
@@ -157,27 +153,28 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     media_group = []
     gif_url = None
     if tweet.media:
+        log_handling(update, 'debug', f'tweet.media: {tweet.media.__dict__}')
         for twitter_media in tweet.media:
             if isinstance(twitter_media, sntwitter.Photo):
-                log_handling_info(update, f'Photo[{len(media_group)}] url: {twitter_media.fullUrl}')
+                log_handling(update, 'info', f'Photo[{len(media_group)}] url: {twitter_media.fullUrl}')
                 parsed_url = urlsplit(twitter_media.fullUrl)
 
                 # Change requested quality to 'orig'
                 new_url = parsed_url._replace(query='format=jpg&name=orig').geturl()
-                log_handling_info(update, 'New photo url: ' + new_url)
+                log_handling(update, 'info', 'New photo url: ' + new_url)
 
                 media_group.append(InputMediaDocument(media=new_url))
             elif isinstance(twitter_media, sntwitter.Gif):
                 gif_url = twitter_media.variants[0].url
-                log_handling_info(update, f'Gif url: {gif_url}')
+                log_handling(update, 'info', f'Gif url: {gif_url}')
             elif isinstance(twitter_media, sntwitter.Video):
                 # Find video variant with the best bitrate
                 video = max((video_variant for video_variant in twitter_media.variants
                              if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
-                log_handling_info(update, 'Selected video variant: ' + str(video))
+                log_handling(update, 'info', 'Selected video variant: ' + str(video))
                 media_group.append(InputMediaDocument(media=video.url))
             else:
-                log_handling_info(update, f'Skipping unsupported media: {twitter_media.__class__.__name__}')
+                log_handling(update, 'info', f'Skipping unsupported media: {twitter_media.__class__.__name__}')
 
     # Check if we have found gif to send
     if gif_url:
@@ -185,10 +182,10 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     # Check if we have found any other media to send
     elif media_group:
         update.message.reply_media_group(media_group, quote=True)
-        log_handling_info(update, f'Sent media group (len {len(media_group)})')
+        log_handling(update, 'info', f'Sent media group (len {len(media_group)})')
         stats['media_downloaded'] += len(media_group)
     else:
-        log_handling_info(update, 'No supported media found')
+        log_handling(update, 'info', 'No supported media found')
         update.message.reply_text('No supported media found', quote=True)
 
 
