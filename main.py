@@ -37,6 +37,7 @@ except (FileNotFoundError, json.decoder.JSONDecodeError):
 
 
 def log_handling(update: Update, level: str, message: str) -> None:
+    """Log message with chat_id and message_id."""
     _level = getattr(logging, level.upper())
     logger.log(_level, f'[{update.effective_chat.id}:{update.effective_message.message_id}] {message}')
 
@@ -133,7 +134,7 @@ def deny_access(update: Update, context: CallbackContext) -> None:
 
 
 def handle_message(update: Update, context: CallbackContext) -> None:
-    """Handle the user message. Reply with found supported media"""
+    """Handle the user message. Reply with found supported media."""
     log_handling(update, 'info', 'Received message: ' + update.message.text.replace("\n", ""))
     stats['messages_handled'] += 1
 
@@ -189,7 +190,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 
 
 def write_stats() -> None:
-    """Write bot statistics to a file"""
+    """Write bot statistics to a file."""
     with open('stats.json', 'w+', encoding="utf8") as _stats_file:
         json.dump(stats, _stats_file)
 
