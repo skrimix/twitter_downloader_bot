@@ -223,7 +223,10 @@ def main() -> None:
 
         # Set commands menu
         commands = [BotCommand("start", "Start the bot"), BotCommand("help", "Help message")]
-        bot.set_my_commands(commands, scope=BotCommandScopeChat(DEVELOPER_ID))
+        try:
+            bot.set_my_commands(commands, scope=BotCommandScopeChat(DEVELOPER_ID))
+        except telegram.error.BadRequest as exc:
+            logger.warning(f"Couldn't set my commands for developer chat: {exc.message}")
 
     else:
         # on different commands - answer in Telegram
@@ -238,7 +241,10 @@ def main() -> None:
         dev_commands = public_commands + [BotCommand("stats", "Get bot statistics"),
                                           BotCommand("resetstats", "Reset bot statistics")]
         bot.set_my_commands(public_commands)
-        bot.set_my_commands(dev_commands, scope=BotCommandScopeChat(DEVELOPER_ID))
+        try:
+            bot.set_my_commands(dev_commands, scope=BotCommandScopeChat(DEVELOPER_ID))
+        except telegram.error.BadRequest as exc:
+            logger.warning(f"Couldn't set my commands for developer chat: {exc.message}")
 
     dispatcher.add_error_handler(error_handler)
 
