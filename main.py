@@ -222,7 +222,8 @@ def main() -> None:
                                               handle_message, run_async=True))
 
         # Set commands menu
-        commands = [BotCommand("start", "Start the bot"), BotCommand("help", "Help message")]
+        commands = [BotCommand("start", "Start the bot"), BotCommand("help", "Help message"),
+                    BotCommand("stats", "Get bot statistics"), BotCommand("resetstats", "Reset bot statistics")]
         try:
             bot.set_my_commands(commands, scope=BotCommandScopeChat(DEVELOPER_ID))
         except telegram.error.BadRequest as exc:
