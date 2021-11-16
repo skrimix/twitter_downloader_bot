@@ -28,12 +28,12 @@ logger = logging.getLogger(__name__)
 r = re.compile(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)")
 
 # Initialize statistics
-# TODO: add user stats and use PicklePersistence, remove error counting
+# TODO: add user stats and use PicklePersistence
 try:
     with open('stats.json', 'r+', encoding="utf8") as stats_file:
         stats = json.load(stats_file)
 except (FileNotFoundError, json.decoder.JSONDecodeError):
-    stats = {'messages_handled': 0, 'media_downloaded': 0, 'errors': 0}
+    stats = {'messages_handled': 0, 'media_downloaded': 0}
 
 
 def log_handling(update: Update, level: str, message: str) -> None:
@@ -93,8 +93,6 @@ def error_handler(update: object, context: CallbackContext) -> None:
         error_class_name = ".".join([context.error.__class__.__module__, context.error.__class__.__qualname__])
         update.effective_message.reply_text(f'Error\n{error_class_name}: {str(context.error)}')
 
-    stats['errors'] += 1
-
 
 def start(update: Update, context: CallbackContext) -> None:
     """Send a message when the command /start is issued."""
@@ -113,24 +111,25 @@ def help_command(update: Update, context: CallbackContext) -> None:
 
 def stats_command(update: Update, context: CallbackContext) -> None:
     """Send stats when the command /stats is issued."""
+    logger.info(f'Sent stats: {stats}')
     update.message.reply_markdown_v2(f'*Bot stats:*\nMessages handled: *{stats.get("messages_handled")}*'
-                                     f'\nMedia downloaded: *{stats.get("media_downloaded")}*\n'
-                                     f'Errors count: *{stats.get("errors")}*')
+                                     f'\nMedia downloaded: *{stats.get("media_downloaded")}*')
 
 
 def reset_stats_command(update: Update, context: CallbackContext) -> None:
     """Reset stats when the command /resetstats is issued."""
     global stats
-    stats = {'messages_handled': 0, 'media_downloaded': 0, 'errors': 0}
+    stats = {'messages_handled': 0, 'media_downloaded': 0}
     write_stats()
-    update.message.reply_text("Bot stats have been reset.")
+    logger.info("Bot stats have been reset")
+    update.message.reply_text("Bot stats have been reset")
 
 
 def deny_access(update: Update, context: CallbackContext) -> None:
     """Deny unauthorized access"""
     log_handling(update, 'info', f'Access denied to {update.effective_user.full_name} (@{update.effective_user.username}),'
                                  f' userId {update.effective_user.id}')
-    update.message.reply_text(f'Access denied. Your id ({update.effective_user.id}) is not in whitelist')
+    update.message.reply_text(f'Access denied. Your id ({update.effective_user.id}) is not whitelisted')
 
 
 def handle_message(update: Update, context: CallbackContext) -> None:
