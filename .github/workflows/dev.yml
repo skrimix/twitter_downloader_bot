@@ -1,10 +1,10 @@
-name: CI
+name: CI-dev
 
 # Controls when the workflow will run
 on:
   # Triggers the workflow on push events but only for the master branch
   push:
-    branches: [ master ]
+    branches: [ dev ]
     paths:
       - '**.py'
 
@@ -17,12 +17,15 @@ jobs:
   deploy:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
-    environment: production
+    environment: development
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
+
+      - name: Set IS_BOT_PRIVATE
+        run: sed -i '/IS_BOT_PRIVATE.*/c\IS_BOT_PRIVATE = True' $GITHUB_WORKSPACE/config.py
 
       - name: Insert bot telegram token
         uses: jwsi/secret-parser@v1
@@ -57,5 +60,5 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
           passphrase: ${{ secrets.DEPLOY_KEY_PASS }}
-          script: sudo systemctl restart tg_twitter_bot.service
+          script: sudo systemctl restart tg_twitter_bot_dev.service
 
