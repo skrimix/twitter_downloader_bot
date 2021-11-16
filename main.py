@@ -153,7 +153,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     media_group = []
     gif_url = None
     if tweet.media:
-        log_handling(update, 'debug', f'tweet.media: {tweet.media.__dict__}')
+        log_handling(update, 'debug', f'tweet.media: {tweet.media}')
         for twitter_media in tweet.media:
             if isinstance(twitter_media, sntwitter.Photo):
                 log_handling(update, 'info', f'Photo[{len(media_group)}] url: {twitter_media.fullUrl}')
