@@ -5,7 +5,10 @@ import traceback
 from io import StringIO
 from os import getpid, kill
 from signal import SIGTERM
+from tempfile import TemporaryFile
 from urllib.parse import urlsplit
+
+import requests
 
 try:
     import re2 as re
@@ -139,6 +142,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     stats['messages_handled'] += 1
 
     # Search for tweet ID in received message
+    # TODO: support t.co links
     m = r.search(update.message.text)
     if m:
         tweet_id = m.group(1)
@@ -150,41 +154,59 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 
     # Scrape a single tweet by ID
     tweet = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
-    media_group = []
+    photo_group = []
     gif_url = None
+    video = None
     if tweet.media:
         log_handling(update, 'debug', f'tweet.media: {tweet.media}')
         for twitter_media in tweet.media:
             if isinstance(twitter_media, sntwitter.Photo):
-                log_handling(update, 'info', f'Photo[{len(media_group)}] url: {twitter_media.fullUrl}')
+                log_handling(update, 'info', f'Photo[{len(photo_group)}] url: {twitter_media.fullUrl}')
                 parsed_url = urlsplit(twitter_media.fullUrl)
 
                 # Change requested quality to 'orig'
                 new_url = parsed_url._replace(query='format=jpg&name=orig').geturl()
                 log_handling(update, 'info', 'New photo url: ' + new_url)
 
-                media_group.append(InputMediaDocument(media=new_url))
+                photo_group.append(InputMediaDocument(media=new_url))
             elif isinstance(twitter_media, sntwitter.Gif):
                 gif_url = twitter_media.variants[0].url
                 log_handling(update, 'info', f'Gif url: {gif_url}')
+                update.message.reply_animation(animation=gif_url, quote=True)
+                stats['media_downloaded'] += 1
             elif isinstance(twitter_media, sntwitter.Video):
                 # Find video variant with the best bitrate
                 video = max((video_variant for video_variant in twitter_media.variants
                              if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
                 log_handling(update, 'info', 'Selected video variant: ' + str(video))
-                media_group.append(InputMediaDocument(media=video.url))
+                try:
+                    # Try sending by url
+                    update.message.reply_video(video=video.url, quote=True)
+                # If Telegram returned BadRequest (this happens for some urls, idk why) download and send the file
+                except telegram.error.BadRequest:
+                    request = requests.get(video.url, stream=True)
+                    # Proceed only if status code is 200 and video not more than 50MB (Telegram limitation)
+                    # TODO: try lower quality variants to go under limit
+                    if request.status_code == 200 and request.headers['Content-length'] <= '50000000':
+                        message = update.message.reply_text('Telegram returned error\nTrying fallback method (slower)',
+                                                            quote=True)
+                        with TemporaryFile() as tf:
+                            for chunk in request.iter_content(chunk_size=128):
+                                tf.write(chunk)
+                            tf.seek(0)
+                            update.message.reply_video(video=tf, quote=True, supports_streaming=True)
+                            message.delete()
+                    else:
+                        update.message.reply_text('Telegram returned error and video is too large')
             else:
                 log_handling(update, 'info', f'Skipping unsupported media: {twitter_media.__class__.__name__}')
 
-    # Check if we have found gif to send
-    if gif_url:
-        update.message.reply_animation(animation=gif_url, quote=True)
-    # Check if we have found any other media to send
-    elif media_group:
-        update.message.reply_media_group(media_group, quote=True)
-        log_handling(update, 'info', f'Sent media group (len {len(media_group)})')
-        stats['media_downloaded'] += len(media_group)
-    else:
+    # Check if we have found any photos to send
+    if photo_group:
+        update.message.reply_media_group(photo_group, quote=True)
+        log_handling(update, 'info', f'Sent photo group (len {len(photo_group)})')
+        stats['media_downloaded'] += len(photo_group)
+    elif not (gif_url or video):
         log_handling(update, 'info', 'No supported media found')
         update.message.reply_text('No supported media found', quote=True)
 

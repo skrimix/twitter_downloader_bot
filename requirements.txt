@@ -1,2 +1,3 @@
 git+https://github.com/JustAnotherArchivist/snscrape@master#egg=snscrape
 python-telegram-bot
+requests
