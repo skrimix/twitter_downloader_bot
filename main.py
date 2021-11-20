@@ -173,6 +173,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
                 gif_url = twitter_media.variants[0].url
                 log_handling(update, 'info', f'Gif url: {gif_url}')
                 update.message.reply_animation(animation=gif_url, quote=True)
+                log_handling(update, 'info', 'Sent gif')
                 stats['media_downloaded'] += 1
             elif isinstance(twitter_media, sntwitter.Video):
                 # Find video variant with the best bitrate
@@ -182,21 +183,30 @@ def handle_message(update: Update, context: CallbackContext) -> None:
                 try:
                     # Try sending by url
                     update.message.reply_video(video=video.url, quote=True)
+                    log_handling(update, 'info', 'Sent video')
                 # If Telegram returned BadRequest (this happens for some urls, idk why) download and send the file
-                except telegram.error.BadRequest:
+                except telegram.error.BadRequest as exc:
                     request = requests.get(video.url, stream=True)
                     # Proceed only if status code is 200 and video is not larger than 50MB (Telegram limitation)
                     # TODO: try lower quality variants to go under limit
                     if request.status_code == 200 and request.headers['Content-length'] <= '50000000':
+                        log_handling(update, 'info', f'Telegram returned error (BadRequest: {exc.message}).'
+                                                     f' Trying fallback method')
                         message = update.message.reply_text('Telegram returned error\nTrying fallback method (slower)',
                                                             quote=True)
                         with TemporaryFile() as tf:
+                            log_handling(update, 'info', f'Downloading video (Content-length: '
+                                                          f'{request.headers["Content-length"]})')
                             for chunk in request.iter_content(chunk_size=128):
                                 tf.write(chunk)
                             tf.seek(0)
                             update.message.reply_video(video=tf, quote=True, supports_streaming=True)
                             message.delete()
+                            log_handling(update, 'info', 'Sent video (fallback)')
                     else:
+                        log_handling(update, 'info', f'Telegram returned error (BadRequest: {exc.message}) '
+                                                     f'and video is too large (Content-length: '
+                                                     f'{request.headers["Content-length"]})')
                         update.message.reply_text('Telegram returned error and video is too large')
             else:
                 log_handling(update, 'info', f'Skipping unsupported media: {twitter_media.__class__.__name__}')
