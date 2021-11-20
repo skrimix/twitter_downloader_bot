@@ -185,7 +185,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
                 # If Telegram returned BadRequest (this happens for some urls, idk why) download and send the file
                 except telegram.error.BadRequest:
                     request = requests.get(video.url, stream=True)
-                    # Proceed only if status code is 200 and video not more than 50MB (Telegram limitation)
+                    # Proceed only if status code is 200 and video is not larger than 50MB (Telegram limitation)
                     # TODO: try lower quality variants to go under limit
                     if request.status_code == 200 and request.headers['Content-length'] <= '50000000':
                         message = update.message.reply_text('Telegram returned error\nTrying fallback method (slower)',
