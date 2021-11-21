@@ -128,8 +128,9 @@ def reset_stats_command(update: Update, context: CallbackContext) -> None:
 
 def deny_access(update: Update, context: CallbackContext) -> None:
     """Deny unauthorized access"""
-    log_handling(update, 'info', f'Access denied to {update.effective_user.full_name} (@{update.effective_user.username}),'
-                                 f' userId {update.effective_user.id}')
+    log_handling(update, 'info',
+                 f'Access denied to {update.effective_user.full_name} (@{update.effective_user.username}),'
+                 f' userId {update.effective_user.id}')
     update.message.reply_text(f'Access denied. Your id ({update.effective_user.id}) is not whitelisted')
 
 
@@ -138,85 +139,89 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     log_handling(update, 'info', 'Received message: ' + update.message.text.replace("\n", ""))
     stats['messages_handled'] += 1
 
-    # Search for tweet ID in received message
+    # Search for tweet IDs in received message
     # TODO: support t.co links
-    # TODO: support multiple links
-    m = re.search(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)", update.message.text) or \
-        re.search(r"twitter\.com\/.*\/web(?:es)?\/([^\/\?]+)", update.message.text)
-    if m:
-        tweet_id = m.group(1)
-        log_handling(update, 'info', f'Found Tweet ID {tweet_id} in link')
-    else:
-        log_handling(update, 'info', 'No valid tweet link found')
-        update.message.reply_text('No valid tweet link found', quote=True)
+    tweet_ids = re.findall(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?\n]+)", update.message.text) + \
+        re.findall(r"twitter\.com\/.*\/web(?:es)?\/([^\/\?\n]+)", update.message.text)
+    log_handling(update, 'info', f'Found Tweet IDs {tweet_ids} in message')
+
+    if not tweet_ids:
+        log_handling(update, 'info', 'No supported tweet link found')
+        update.message.reply_text('No supported tweet link found', quote=True)
         return
+    found_media = False
+    for tweet_id in tweet_ids:
+        # Scrape a single tweet by ID
+        log_handling(update, 'info', f'Scraping tweet ID {tweet_id}')
+        tweet = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
+        photo_group = []
+        gif_url = None
+        video = None
+        if tweet.media:
+            log_handling(update, 'debug', f'tweet.media: {tweet.media}')
+            for twitter_media in tweet.media:
+                if isinstance(twitter_media, sntwitter.Photo):
+                    found_media = True
+                    log_handling(update, 'info', f'Photo[{len(photo_group)}] url: {twitter_media.fullUrl}')
+                    parsed_url = urlsplit(twitter_media.fullUrl)
 
-    # Scrape a single tweet by ID
-    tweet = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
-    photo_group = []
-    gif_url = None
-    video = None
-    if tweet.media:
-        log_handling(update, 'debug', f'tweet.media: {tweet.media}')
-        for twitter_media in tweet.media:
-            if isinstance(twitter_media, sntwitter.Photo):
-                log_handling(update, 'info', f'Photo[{len(photo_group)}] url: {twitter_media.fullUrl}')
-                parsed_url = urlsplit(twitter_media.fullUrl)
+                    # Change requested quality to 'orig'
+                    new_url = parsed_url._replace(query='format=jpg&name=orig').geturl()
+                    log_handling(update, 'info', 'New photo url: ' + new_url)
 
-                # Change requested quality to 'orig'
-                new_url = parsed_url._replace(query='format=jpg&name=orig').geturl()
-                log_handling(update, 'info', 'New photo url: ' + new_url)
+                    photo_group.append(InputMediaDocument(media=new_url))
+                elif isinstance(twitter_media, sntwitter.Gif):
+                    found_media = True
+                    gif_url = twitter_media.variants[0].url
+                    log_handling(update, 'info', f'Gif url: {gif_url}')
+                    update.message.reply_animation(animation=gif_url, quote=True)
+                    log_handling(update, 'info', 'Sent gif')
+                    stats['media_downloaded'] += 1
+                elif isinstance(twitter_media, sntwitter.Video):
+                    found_media = True
+                    # Find video variant with the best bitrate
+                    video = max((video_variant for video_variant in twitter_media.variants
+                                 if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
+                    log_handling(update, 'info', 'Selected video variant: ' + str(video))
+                    try:
+                        # Try sending by url
+                        update.message.reply_video(video=video.url, quote=True)
+                        log_handling(update, 'info', 'Sent video')
+                    # If Telegram returned BadRequest (this happens for some urls, idk why) download and send the file
+                    except telegram.error.BadRequest as exc:
+                        request = requests.get(video.url, stream=True)
+                        # Proceed only if status code is 200 and video is not larger than 50MB (Telegram limitation)
+                        # TODO: try lower quality variants to go under limit
+                        if request.status_code == 200 and request.headers['Content-length'] <= '50000000':
+                            log_handling(update, 'info', f'Telegram returned error (BadRequest: {exc.message}).'
+                                                         f' Trying fallback method')
+                            message = update.message.reply_text(
+                                'Telegram returned error\nTrying fallback method (slower)',
+                                quote=True)
+                            with TemporaryFile() as tf:
+                                log_handling(update, 'info', f'Downloading video (Content-length: '
+                                                             f'{request.headers["Content-length"]})')
+                                for chunk in request.iter_content(chunk_size=128):
+                                    tf.write(chunk)
+                                tf.seek(0)
+                                update.message.reply_video(video=tf, quote=True, supports_streaming=True)
+                                message.delete()
+                                log_handling(update, 'info', 'Sent video (fallback)')
+                        else:
+                            log_handling(update, 'info', f'Telegram returned error (BadRequest: {exc.message}) '
+                                                         f'and video is too large (Content-length: '
+                                                         f'{request.headers["Content-length"]})')
+                            update.message.reply_text('Telegram returned error and video is too large')
+                    stats['media_downloaded'] += 1
+                else:
+                    log_handling(update, 'info', f'Skipping unsupported media: {twitter_media.__class__.__name__}')
 
-                photo_group.append(InputMediaDocument(media=new_url))
-            elif isinstance(twitter_media, sntwitter.Gif):
-                gif_url = twitter_media.variants[0].url
-                log_handling(update, 'info', f'Gif url: {gif_url}')
-                update.message.reply_animation(animation=gif_url, quote=True)
-                log_handling(update, 'info', 'Sent gif')
-                stats['media_downloaded'] += 1
-            elif isinstance(twitter_media, sntwitter.Video):
-                # Find video variant with the best bitrate
-                video = max((video_variant for video_variant in twitter_media.variants
-                             if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
-                log_handling(update, 'info', 'Selected video variant: ' + str(video))
-                try:
-                    # Try sending by url
-                    update.message.reply_video(video=video.url, quote=True)
-                    log_handling(update, 'info', 'Sent video')
-                # If Telegram returned BadRequest (this happens for some urls, idk why) download and send the file
-                except telegram.error.BadRequest as exc:
-                    request = requests.get(video.url, stream=True)
-                    # Proceed only if status code is 200 and video is not larger than 50MB (Telegram limitation)
-                    # TODO: try lower quality variants to go under limit
-                    if request.status_code == 200 and request.headers['Content-length'] <= '50000000':
-                        log_handling(update, 'info', f'Telegram returned error (BadRequest: {exc.message}).'
-                                                     f' Trying fallback method')
-                        message = update.message.reply_text('Telegram returned error\nTrying fallback method (slower)',
-                                                            quote=True)
-                        with TemporaryFile() as tf:
-                            log_handling(update, 'info', f'Downloading video (Content-length: '
-                                                          f'{request.headers["Content-length"]})')
-                            for chunk in request.iter_content(chunk_size=128):
-                                tf.write(chunk)
-                            tf.seek(0)
-                            update.message.reply_video(video=tf, quote=True, supports_streaming=True)
-                            message.delete()
-                            log_handling(update, 'info', 'Sent video (fallback)')
-                    else:
-                        log_handling(update, 'info', f'Telegram returned error (BadRequest: {exc.message}) '
-                                                     f'and video is too large (Content-length: '
-                                                     f'{request.headers["Content-length"]})')
-                        update.message.reply_text('Telegram returned error and video is too large')
-                stats['media_downloaded'] += 1
-            else:
-                log_handling(update, 'info', f'Skipping unsupported media: {twitter_media.__class__.__name__}')
-
-    # Check if we have found any photos to send
-    if photo_group:
-        update.message.reply_media_group(photo_group, quote=True)
-        log_handling(update, 'info', f'Sent photo group (len {len(photo_group)})')
-        stats['media_downloaded'] += len(photo_group)
-    elif not (gif_url or video):
+        # Check if we have found any photos to send
+        if photo_group:
+            update.message.reply_media_group(photo_group, quote=True)
+            log_handling(update, 'info', f'Sent photo group (len {len(photo_group)})')
+            stats['media_downloaded'] += len(photo_group)
+    if not found_media:
         log_handling(update, 'info', 'No supported media found')
         update.message.reply_text('No supported media found', quote=True)
 
