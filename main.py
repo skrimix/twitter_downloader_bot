@@ -134,6 +134,7 @@ def deny_access(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(f'Access denied. Your id ({update.effective_user.id}) is not whitelisted')
 
 
+# TODO: consider using classes and breaking code into smaller methods
 def handle_message(update: Update, context: CallbackContext) -> None:
     """Handle the user message. Reply with found supported media."""
     log_handling(update, 'info', 'Received message: ' + update.message.text.replace("\n", ""))
@@ -141,8 +142,8 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 
     # Search for tweet IDs in received message
     # TODO: support t.co links
-    tweet_ids = re.findall(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?\n]+)", update.message.text) + \
-        re.findall(r"twitter\.com\/.*\/web(?:es)?\/([^\/\?\n]+)", update.message.text)
+    tweet_ids = re.findall(r"twitter\.com/.*/status(?:es)?/([^/?\n]+)", update.message.text) + \
+        re.findall(r"twitter\.com/.*/web(?:es)?/([^/?\n]+)", update.message.text)
     log_handling(update, 'info', f'Found Tweet IDs {tweet_ids} in message')
 
     if not tweet_ids:
