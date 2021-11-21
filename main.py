@@ -26,9 +26,6 @@ from config import BOT_TOKEN, DEVELOPER_ID, IS_BOT_PRIVATE
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Compile regex for searching tweet ID in messages
-# TODO: look into parsing twitter.com/i/web/TWEET_ID links
-r = re.compile(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)")
 
 # Initialize statistics
 # TODO: add user stats and use PicklePersistence
@@ -143,7 +140,9 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 
     # Search for tweet ID in received message
     # TODO: support t.co links
-    m = r.search(update.message.text)
+    # TODO: support multiple links
+    m = re.search(r"twitter\.com\/.*\/status(?:es)?\/([^\/\?]+)", update.message.text) or \
+        re.search(r"twitter\.com\/.*\/web(?:es)?\/([^\/\?]+)", update.message.text)
     if m:
         tweet_id = m.group(1)
         log_handling(update, 'info', f'Found Tweet ID {tweet_id} in link')
