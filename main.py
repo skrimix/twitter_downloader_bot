@@ -208,6 +208,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
                                                      f'and video is too large (Content-length: '
                                                      f'{request.headers["Content-length"]})')
                         update.message.reply_text('Telegram returned error and video is too large')
+                stats['media_downloaded'] += 1
             else:
                 log_handling(update, 'info', f'Skipping unsupported media: {twitter_media.__class__.__name__}')
 
