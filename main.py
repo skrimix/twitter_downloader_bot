@@ -142,8 +142,8 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 
     # Search for tweet IDs in received message
     # TODO: support t.co links
-    tweet_ids = re.findall(r"twitter\.com/.*/status(?:es)?/([^/?\n]+)", update.message.text) + \
-        re.findall(r"twitter\.com/.*/web(?:es)?/([^/?\n]+)", update.message.text)
+    tweet_ids = re.findall(r"twitter\.com/.*/status(?:es)?/([0-9]{1,20})", update.message.text) + \
+        re.findall(r"twitter\.com/.*/web/([0-9]{1,20})", update.message.text)
     log_handling(update, 'info', f'Found Tweet IDs {tweet_ids} in message')
 
     if not tweet_ids:
