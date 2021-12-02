@@ -65,6 +65,7 @@ def error_handler(update: object, context: CallbackContext) -> None:
     # You might need to add some logic to deal with messages longer than the 4096 character limit.
     update_str = update.to_dict() if isinstance(update, Update) else str(update)
     message = (
+        f'#error_report\n'
         f'An exception was raised in runtime\n'
         f'<pre>update = {html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))}'
         '</pre>\n\n'
@@ -88,7 +89,7 @@ def error_handler(update: object, context: CallbackContext) -> None:
         )
         string_out = StringIO(message)
         context.bot.send_document(chat_id=DEVELOPER_ID, document=string_out, filename='error.txt',
-                                  caption='An exception was raised during runtime\n')
+                                  caption='#error_report\nAn exception was raised during runtime\n')
 
     if update:
         error_class_name = ".".join([context.error.__class__.__module__, context.error.__class__.__qualname__])
@@ -156,8 +157,6 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         log_handling(update, 'info', f'Scraping tweet ID {tweet_id}')
         tweet = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
         photo_group = []
-        gif_url = None
-        video = None
         if tweet.media:
             log_handling(update, 'debug', f'tweet.media: {tweet.media}')
             for twitter_media in tweet.media:
@@ -185,34 +184,38 @@ def handle_message(update: Update, context: CallbackContext) -> None:
                                  if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
                     log_handling(update, 'info', 'Selected video variant: ' + str(video))
                     try:
-                        # Try sending by url
-                        update.message.reply_video(video=video.url, quote=True)
-                        log_handling(update, 'info', 'Sent video')
-                    # If Telegram returned BadRequest (this happens for some urls, idk why) download and send the file
-                    except telegram.error.BadRequest as exc:
                         request = requests.get(video.url, stream=True)
-                        # Proceed only if status code is 200 and video is not larger than 50MB (Telegram limitation)
-                        # TODO: try lower quality variants to go under limit
-                        if request.status_code == 200 and request.headers['Content-length'] <= '50000000':
-                            log_handling(update, 'info', f'Telegram returned error (BadRequest: {exc.message}).'
-                                                         f' Trying fallback method')
+                        request.raise_for_status()
+                        video_size = int(request.headers['content-length'])
+                        if video_size <= telegram.constants.MAX_FILESIZE_DOWNLOAD:
+                            # Try sending by url
+                            update.message.reply_video(video=video.url, quote=True)
+                            log_handling(update, 'info', 'Sent video (download)')
+                        elif video_size <= telegram.constants.MAX_FILESIZE_UPLOAD:
+                            log_handling(update, 'info', f'Video size ({video_size}) is bigger than '
+                                                         f'MAX_FILESIZE_UPLOAD, using upload method')
                             message = update.message.reply_text(
-                                'Telegram returned error\nTrying fallback method (slower)',
+                                'Video is too large for direct download\nUsing upload method '
+                                '(this might take a bit longer)',
                                 quote=True)
                             with TemporaryFile() as tf:
                                 log_handling(update, 'info', f'Downloading video (Content-length: '
                                                              f'{request.headers["Content-length"]})')
                                 for chunk in request.iter_content(chunk_size=128):
                                     tf.write(chunk)
+                                log_handling(update, 'info', f'Video downloaded, uploading to Telegram')
                                 tf.seek(0)
                                 update.message.reply_video(video=tf, quote=True, supports_streaming=True)
-                                message.delete()
-                                log_handling(update, 'info', 'Sent video (fallback)')
+                                log_handling(update, 'info', 'Sent video (upload)')
+                            message.delete()
                         else:
-                            log_handling(update, 'info', f'Telegram returned error (BadRequest: {exc.message}) '
-                                                         f'and video is too large (Content-length: '
-                                                         f'{request.headers["Content-length"]})')
-                            update.message.reply_text('Telegram returned error and video is too large')
+                            log_handling(update, 'info', 'Video is too large, sending direct link')
+                            update.message.reply_text(f'Video is too large for Telegram upload. Direct video link:\n'
+                                                      f'{video.url}', quote=True)
+                    except (requests.HTTPError, KeyError, telegram.error.BadRequest):
+                        log_handling(update, 'info', 'Error occurred when trying to send video, sending direct link')
+                        update.message.reply_text(f'Error occurred when trying to send video. Direct video link:\n'
+                                                  f'{video.url}', quote=True)
                     stats['media_downloaded'] += 1
                 else:
                     log_handling(update, 'info', f'Skipping unsupported media: {twitter_media.__class__.__name__}')
