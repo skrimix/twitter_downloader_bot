@@ -14,6 +14,7 @@ try:
     import re2 as re
 except ImportError:
     import re
+import snscrape.base
 import snscrape.modules.twitter as sntwitter
 import telegram.error
 from telegram import Update, InputMediaDocument, ParseMode, constants, BotCommand, BotCommandScopeChat
@@ -36,6 +37,7 @@ except (FileNotFoundError, json.decoder.JSONDecodeError):
     stats = {'messages_handled': 0, 'media_downloaded': 0}
 
 
+# TODO: use LoggerAdapter instead
 def log_handling(update: Update, level: str, message: str) -> None:
     """Log message with chat_id and message_id."""
     _level = getattr(logging, level.upper())
@@ -155,7 +157,14 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     for tweet_id in tweet_ids:
         # Scrape a single tweet by ID
         log_handling(update, 'info', f'Scraping tweet ID {tweet_id}')
-        tweet = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
+        try:
+            tweet = sntwitter.TwitterTweetScraper(tweet_id,
+                                                  sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
+        except snscrape.base.ScraperException as exc:
+            error_class_name = ".".join([exc.__class__.__module__, exc.__class__.__qualname__])
+            log_handling(update, 'warning', f'Scraper exception {error_class_name}: {str(exc)}')
+            update.effective_message.reply_text(f'Scraper error (is tweet available?)')
+            return
         photo_group = []
         if tweet.media:
             log_handling(update, 'debug', f'tweet.media: {tweet.media}')
