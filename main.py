@@ -160,7 +160,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         try:
             tweet = sntwitter.TwitterTweetScraper(tweet_id,
                                                   sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
-        except snscrape.base.ScraperException as exc:
+        except (snscrape.base.ScraperException, KeyError) as exc:
             error_class_name = ".".join([exc.__class__.__module__, exc.__class__.__qualname__])
             log_handling(update, 'warning', f'Scraper exception {error_class_name}: {str(exc)}')
             update.effective_message.reply_text(f'Scraper error (is tweet available?)')
