@@ -77,21 +77,17 @@ def error_handler(update: object, context: CallbackContext) -> None:
     )
 
     # Finally, send the message
-    # If message is too long, send it as document
-    if len(message) <= constants.MAX_MESSAGE_LENGTH:
-        context.bot.send_message(chat_id=DEVELOPER_ID, text=message, parse_mode=ParseMode.HTML)
-    else:
-        logger.warning('Error message is too long, sending as file')
-        message = (
-            f'update = {json.dumps(update_str, indent=2, ensure_ascii=False)}'
-            '\n\n'
-            f'context.chat_data = {str(context.chat_data)}\n\n'
-            f'context.user_data = {str(context.user_data)}\n\n'
-            f'{tb_string}'
-        )
-        string_out = StringIO(message)
-        context.bot.send_document(chat_id=DEVELOPER_ID, document=string_out, filename='error.txt',
-                                  caption='#error_report\nAn exception was raised during runtime\n')
+    logger.warning('Error message is too long, sending as file')
+    message = (
+        f'update = {json.dumps(update_str, indent=2, ensure_ascii=False)}'
+        '\n\n'
+        f'context.chat_data = {str(context.chat_data)}\n\n'
+        f'context.user_data = {str(context.user_data)}\n\n'
+        f'{tb_string}'
+    )
+    string_out = StringIO(message)
+    context.bot.send_document(chat_id=DEVELOPER_ID, document=string_out, filename='error_report.txt',
+                              caption='#error_report\nAn exception was raised during runtime\n')
 
     if update:
         error_class_name = ".".join([context.error.__class__.__module__, context.error.__class__.__qualname__])
