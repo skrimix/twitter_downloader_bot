@@ -154,6 +154,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         # Scrape a single tweet by ID
         log_handling(update, 'info', f'Scraping tweet ID {tweet_id}')
         try:
+            # TODO: multiple attempts (ScraperException: Unable to find guest token)
             tweet = sntwitter.TwitterTweetScraper(tweet_id,
                                                   sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
         except (snscrape.base.ScraperException, KeyError) as exc:
@@ -170,11 +171,15 @@ def handle_message(update: Update, context: CallbackContext) -> None:
                     log_handling(update, 'info', f'Photo[{len(photo_group)}] url: {twitter_media.fullUrl}')
                     parsed_url = urlsplit(twitter_media.fullUrl)
 
-                    # Change requested quality to 'orig'
-                    new_url = parsed_url._replace(query='format=jpg&name=orig').geturl()
-                    log_handling(update, 'info', 'New photo url: ' + new_url)
-
-                    photo_group.append(InputMediaDocument(media=new_url))
+                    # Try changing requested quality to 'orig'
+                    try:
+                        new_url = parsed_url._replace(query='format=jpg&name=orig').geturl()
+                        log_handling(update, 'info', 'New photo url: ' + new_url)
+                        requests.head(new_url).raise_for_status()
+                        photo_group.append(InputMediaDocument(media=new_url))
+                    except requests.HTTPError:
+                        log_handling(update, 'info', 'orig quality not available, using original url')
+                        photo_group.append(InputMediaDocument(media=twitter_media.fullUrl))
                 elif isinstance(twitter_media, sntwitter.Gif):
                     found_media = True
                     gif_url = twitter_media.variants[0].url
