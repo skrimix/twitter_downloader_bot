@@ -153,18 +153,27 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     for tweet_id in tweet_ids:
         # Scrape a single tweet by ID
         log_handling(update, 'info', f'Scraping tweet ID {tweet_id}')
+        tweet = None
         try:
-            # TODO: multiple attempts (ScraperException: Unable to find guest token)
-            tweet_scraper = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE)
-            tweet_scraper._retries = 1
-            tweet = tweet_scraper.get_items().__next__()
+            # https://github.com/JustAnotherArchivist/snscrape/issues/325
+            retries = 3
+            while retries > 0:
+                try:
+                    tweet_scraper = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE)
+                    tweet_scraper._retries = 1
+                    tweet = tweet_scraper.get_items().__next__()
+                    break
+                except snscrape.base.ScraperException as exc:
+                    retries -= 1
+                    if not str(exc) == 'Unable to find guest token' or retries == 0:
+                        raise
         except (snscrape.base.ScraperException, KeyError) as exc:
             error_class_name = ".".join([exc.__class__.__module__, exc.__class__.__qualname__])
             log_handling(update, 'warning', f'Scraper exception {error_class_name}: {str(exc)}')
             update.effective_message.reply_text(f'Scraper error (is tweet available?)')
             return
         photo_group = []
-        if tweet.media:
+        if tweet and tweet.media:
             log_handling(update, 'debug', f'tweet.media: {tweet.media}')
             for twitter_media in tweet.media:
                 if isinstance(twitter_media, sntwitter.Photo):
