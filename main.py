@@ -77,7 +77,7 @@ def error_handler(update: object, context: CallbackContext) -> None:
     )
 
     # Finally, send the message
-    logger.warning('Error message is too long, sending as file')
+    logger.info('Sending error report')
     message = (
         f'update = {json.dumps(update_str, indent=2, ensure_ascii=False)}'
         '\n\n'
