@@ -155,8 +155,9 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         log_handling(update, 'info', f'Scraping tweet ID {tweet_id}')
         try:
             # TODO: multiple attempts (ScraperException: Unable to find guest token)
-            tweet = sntwitter.TwitterTweetScraper(tweet_id,
-                                                  sntwitter.TwitterTweetScraperMode.SINGLE).get_items().__next__()
+            tweet_scraper = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE)
+            tweet_scraper._retries = 1
+            tweet = tweet_scraper.get_items().__next__()
         except (snscrape.base.ScraperException, KeyError) as exc:
             error_class_name = ".".join([exc.__class__.__module__, exc.__class__.__qualname__])
             log_handling(update, 'warning', f'Scraper exception {error_class_name}: {str(exc)}')
