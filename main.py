@@ -242,18 +242,9 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         log_handling(update, 'info', f'Scraping tweet ID {tweet_id}')
         tweet = None
         try:
-            # https://github.com/JustAnotherArchivist/snscrape/issues/325
-            retries = 3
-            while retries > 0:
-                try:
-                    tweet_scraper = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE)
-                    tweet_scraper._retries = 1
-                    tweet = tweet_scraper.get_items().__next__()
-                    break
-                except snscrape.base.ScraperException as exc:
-                    retries -= 1
-                    if str(exc) != 'Unable to find guest token' or retries == 0:
-                        raise
+            tweet_scraper = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE)
+            tweet_scraper._retries = 2
+            tweet = tweet_scraper.get_items().__next__()
         except (snscrape.base.ScraperException, KeyError) as exc:
             error_class_name = ".".join([exc.__class__.__module__, exc.__class__.__qualname__])
             log_handling(update, 'warning', f'Scraper exception {error_class_name}: {str(exc)}')
