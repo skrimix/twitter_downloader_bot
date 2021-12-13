@@ -7,6 +7,7 @@ from os import getpid, kill
 from signal import SIGTERM
 from tempfile import TemporaryFile
 from urllib.parse import urlsplit
+from typing import Optional
 
 import requests
 
@@ -37,7 +38,7 @@ except (FileNotFoundError, json.decoder.JSONDecodeError):
     stats = {'messages_handled': 0, 'media_downloaded': 0}
 
 
-def extract_tweet_ids(text: str) -> list[str] | None:
+def extract_tweet_ids(text: str) -> Optional[list[str]]:
     """Extract tweet IDs from message."""
     # Search for tweet IDs in received message
     # TODO: support t.co links
