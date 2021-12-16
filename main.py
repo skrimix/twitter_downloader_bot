@@ -130,7 +130,8 @@ def reply_video(update: Update, twitter_video: sntwitter.Video):
             log_handling(update, 'info', 'Video is too large, sending direct link')
             update.message.reply_text(f'Video is too large for Telegram upload. Direct video link:\n'
                                       f'{video.url}', quote=True)
-    except (requests.HTTPError, KeyError, telegram.error.BadRequest):
+    except (requests.HTTPError, KeyError, telegram.error.BadRequest, requests.exceptions.ConnectionError) as exc:
+        log_handling(update, 'info', f'{exc.__class__.__qualname__}: {exc}')
         log_handling(update, 'info', 'Error occurred when trying to send video, sending direct link')
         update.message.reply_text(f'Error occurred when trying to send video. Direct video link:\n'
                                   f'{video.url}', quote=True)
