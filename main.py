@@ -6,8 +6,8 @@ from io import StringIO
 from os import getpid, kill
 from signal import SIGTERM
 from tempfile import TemporaryFile
-from urllib.parse import urlsplit
 from typing import Optional
+from urllib.parse import urlsplit
 
 import requests
 
@@ -23,11 +23,9 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Callb
 
 from config import BOT_TOKEN, DEVELOPER_ID, IS_BOT_PRIVATE
 
-
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 # Initialize statistics
 # TODO: add user stats and use PicklePersistence
@@ -38,12 +36,19 @@ except (FileNotFoundError, json.decoder.JSONDecodeError):
     stats = {'messages_handled': 0, 'media_downloaded': 0}
 
 
-def extract_tweet_ids(text: str) -> Optional[list[str]]:
+def extract_tweet_ids(update: Update) -> Optional[list[str]]:
     """Extract tweet IDs from message."""
-    # Search for tweet IDs in received message
-    # TODO: support t.co links
-    tweet_ids = re.findall(r"twitter\.com/.*/status(?:es)?/([0-9]{1,20})", text) + \
-                re.findall(r"twitter\.com/.*/web/([0-9]{1,20})", text)
+    text = update.message.text
+
+    # For t.co links
+    unshortened_links = ''
+    for link in re.findall(r"t.co/[a-zA-Z0-9]+", text):
+        unshortened_link = requests.get('https://' + link).url
+        unshortened_links += '\n' + unshortened_link
+        log_handling(update, 'info', f'Unshortened t.co link [https://{link} -> {unshortened_link}]')
+
+    # Parse IDs from received text
+    tweet_ids = re.findall(r"twitter\.com/.{1,15}/(?:web|status(?:es)?)/([0-9]{1,20})", text + unshortened_links)
     tweet_ids = list(dict.fromkeys(tweet_ids))
     return tweet_ids or None
 
@@ -231,7 +236,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     log_handling(update, 'info', 'Received message: ' + update.message.text.replace("\n", ""))
     stats['messages_handled'] += 1
 
-    if tweet_ids := extract_tweet_ids(update.message.text):
+    if tweet_ids := extract_tweet_ids(update):
         log_handling(update, 'info', f'Found Tweet IDs {tweet_ids} in message')
     else:
         log_handling(update, 'info', 'No supported tweet link found')
