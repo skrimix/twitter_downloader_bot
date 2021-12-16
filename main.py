@@ -199,13 +199,13 @@ def start(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
     update.message.reply_markdown_v2(
         fr'Hi {user.mention_markdown_v2()}\!' +
-        '\nSend tweet link here and I will download media in best available quality for you'
+        '\nSend tweet link here and I will download media in the best available quality for you'
     )
 
 
 def help_command(update: Update, context: CallbackContext) -> None:
     """Send a message when the command /help is issued."""
-    update.message.reply_text('Send tweet link here and I will download media in best available quality for you')
+    update.message.reply_text('Send tweet link here and I will download media in the best available quality for you')
 
 
 def stats_command(update: Update, context: CallbackContext) -> None:
