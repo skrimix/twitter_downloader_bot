@@ -318,7 +318,9 @@ def main() -> None:
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message, run_async=True))
 
         # Set commands menu
-        public_commands = [BotCommand("start", "Start the bot"), BotCommand("help", "Help message")]
+        # Public commands are useless for now
+        # public_commands = [BotCommand("start", "Start the bot"), BotCommand("help", "Help message")]
+        public_commands = []
         dev_commands = public_commands + [BotCommand("stats", "Get bot statistics"),
                                           BotCommand("resetstats", "Reset bot statistics")]
         bot.set_my_commands(public_commands)
