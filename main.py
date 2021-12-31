@@ -152,8 +152,10 @@ def error_handler(update: object, context: CallbackContext) -> None:
         return
 
     if isinstance(context.error, telegram.error.Conflict):
-        logger.critical(msg="Requests conflict found, exiting...")
-        kill(getpid(), SIGTERM)
+        # logger.critical(msg="Requests conflict found, exiting...")
+        # kill(getpid(), SIGTERM)
+        logger.error("Telegram requests conflict")
+        return
 
     # Log the error before we do anything else, so we can see it even if something breaks.
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
