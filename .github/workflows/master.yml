@@ -24,6 +24,9 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
 
+      - name: Use production config
+        run: mv -f $GITHUB_WORKSPACE/config_prod.py $GITHUB_WORKSPACE/config.py
+
       - name: Insert bot telegram token
         uses: jwsi/secret-parser@v1
         with:
