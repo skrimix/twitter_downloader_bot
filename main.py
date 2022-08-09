@@ -251,7 +251,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         log_handling(update, 'info', f'Scraping tweet ID {tweet_id}')
         tweet = None
         try:
-            tweet_scraper = sntwitter.TwitterTweetScraper(tweet_id, sntwitter.TwitterTweetScraperMode.SINGLE)
+            tweet_scraper = sntwitter.TwitterTweetScraper(tweet_id, mode=sntwitter.TwitterTweetScraperMode.SINGLE)
             tweet_scraper._retries = 2
             tweet = tweet_scraper.get_items().__next__()
         except (snscrape.base.ScraperException, KeyError) as exc:
