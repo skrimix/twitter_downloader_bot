@@ -18,22 +18,14 @@ except ImportError:
 import snscrape.base
 import snscrape.modules.twitter as sntwitter
 import telegram.error
-from telegram import Update, InputMediaDocument, constants, BotCommand, BotCommandScopeChat
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram import Update, InputMediaDocument, InputMediaAnimation, constants, BotCommand, BotCommandScopeChat
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, PicklePersistence
 
 from config import BOT_TOKEN, DEVELOPER_ID, IS_BOT_PRIVATE
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Initialize statistics
-# TODO: add user stats and use PicklePersistence
-try:
-    with open('stats.json', 'r+', encoding="utf8") as stats_file:
-        stats = json.load(stats_file)
-except (FileNotFoundError, json.decoder.JSONDecodeError):
-    stats = {'messages_handled': 0, 'media_downloaded': 0}
 
 
 def extract_tweet_ids(update: Update) -> Optional[list[str]]:
@@ -42,10 +34,13 @@ def extract_tweet_ids(update: Update) -> Optional[list[str]]:
 
     # For t.co links
     unshortened_links = ''
-    for link in re.findall(r"t.co/[a-zA-Z0-9]+", text):
-        unshortened_link = requests.get('https://' + link).url
-        unshortened_links += '\n' + unshortened_link
-        log_handling(update, 'info', f'Unshortened t.co link [https://{link} -> {unshortened_link}]')
+    for link in re.findall(r"t\.co\/[a-zA-Z0-9]+", text):
+        try:
+            unshortened_link = requests.get('https://' + link).url
+            unshortened_links += '\n' + unshortened_link
+            log_handling(update, 'info', f'Unshortened t.co link [https://{link} -> {unshortened_link}]')
+        except:
+            log_handling(update, 'info', f'Could not unshorten link [https://{link}]')
 
     # Parse IDs from received text
     tweet_ids = re.findall(r"twitter\.com/.{1,15}/(?:web|status(?:es)?)/([0-9]{1,20})", text + unshortened_links)
@@ -53,20 +48,21 @@ def extract_tweet_ids(update: Update) -> Optional[list[str]]:
     return tweet_ids or None
 
 
-def reply_media(update: Update, tweet_media: list) -> bool:
+def reply_media(update: Update, context: CallbackContext, tweet_media: list) -> bool:
     """Reply to message with supported media."""
-    if isinstance(tweet_media[0], sntwitter.Photo):
-        reply_photos(update, tweet_media)
-    elif isinstance(tweet_media[0], sntwitter.Gif):
-        reply_gif(update, tweet_media[0])
-    elif isinstance(tweet_media[0], sntwitter.Video):
-        reply_video(update, tweet_media[0])
-    else:
-        return False
-    return True
+    photos = [media for media in tweet_media if isinstance(media, sntwitter.Photo)]
+    gifs = [media for media in tweet_media if isinstance(media, sntwitter.Gif)]
+    videos = [media for media in tweet_media if isinstance(media, sntwitter.Video)]
+    if photos:
+        reply_photos(update, context, photos)
+    if gifs:
+        reply_gifs(update, context, gifs)
+    elif videos:
+        reply_videos(update, context, videos)
+    return bool(photos or gifs or videos)
 
 
-def reply_photos(update: Update, twitter_photos: list) -> None:
+def reply_photos(update: Update, context: CallbackContext, twitter_photos: list[sntwitter.Photo]) -> None:
     """Reply with photo group."""
     photo_group = []
     for photo in twitter_photos:
@@ -84,58 +80,60 @@ def reply_photos(update: Update, twitter_photos: list) -> None:
             photo_group.append(InputMediaDocument(media=photo.fullUrl))
     update.message.reply_media_group(photo_group, quote=True)
     log_handling(update, 'info', f'Sent photo group (len {len(photo_group)})')
-    stats['media_downloaded'] += len(photo_group)
+    context.bot_data['stats']['media_downloaded'] += len(photo_group)
 
 
-def reply_gif(update: Update, twitter_gif: sntwitter.Gif):
-    """Reply with GIF animation."""
-    gif_url = twitter_gif.variants[0].url
-    log_handling(update, 'info', f'Gif url: {gif_url}')
-    update.message.reply_animation(animation=gif_url, quote=True)
-    log_handling(update, 'info', 'Sent gif')
-    stats['media_downloaded'] += 1
+def reply_gifs(update: Update, context: CallbackContext, twitter_gifs: list[sntwitter.Gif]):
+    """Reply with GIF animations."""
+    for gif in twitter_gifs:
+        gif_url = gif.variants[0].url
+        log_handling(update, 'info', f'Gif url: {gif_url}')
+        update.message.reply_animation(animation=gif_url, quote=True)
+        log_handling(update, 'info', 'Sent gif')
+        context.bot_data['stats']['media_downloaded'] += 1
 
 
-def reply_video(update: Update, twitter_video: sntwitter.Video):
-    """Reply with video."""
-    # Find video variant with the best bitrate
-    video = max((video_variant for video_variant in twitter_video.variants
-                 if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
-    log_handling(update, 'info', 'Selected video variant: ' + str(video))
-    try:
-        request = requests.get(video.url, stream=True)
-        request.raise_for_status()
-        if (video_size := int(request.headers['content-length'])) <= constants.MAX_FILESIZE_DOWNLOAD:
-            # Try sending by url
-            update.message.reply_video(video=video.url, quote=True)
-            log_handling(update, 'info', 'Sent video (download)')
-        elif video_size <= constants.MAX_FILESIZE_UPLOAD:
-            log_handling(update, 'info', f'Video size ({video_size}) is bigger than '
-                                         f'MAX_FILESIZE_UPLOAD, using upload method')
-            message = update.message.reply_text(
-                'Video is too large for direct download\nUsing upload method '
-                '(this might take a bit longer)',
-                quote=True)
-            with TemporaryFile() as tf:
-                log_handling(update, 'info', f'Downloading video (Content-length: '
-                                             f'{request.headers["Content-length"]})')
-                for chunk in request.iter_content(chunk_size=128):
-                    tf.write(chunk)
-                log_handling(update, 'info', 'Video downloaded, uploading to Telegram')
-                tf.seek(0)
-                update.message.reply_video(video=tf, quote=True, supports_streaming=True)
-                log_handling(update, 'info', 'Sent video (upload)')
-            message.delete()
-        else:
-            log_handling(update, 'info', 'Video is too large, sending direct link')
-            update.message.reply_text(f'Video is too large for Telegram upload. Direct video link:\n'
-                                      f'{video.url}', quote=True)
-    except (requests.HTTPError, KeyError, telegram.error.BadRequest, requests.exceptions.ConnectionError) as exc:
-        log_handling(update, 'info', f'{exc.__class__.__qualname__}: {exc}')
-        log_handling(update, 'info', 'Error occurred when trying to send video, sending direct link')
-        update.message.reply_text(f'Error occurred when trying to send video. Direct video link:\n'
-                                  f'{video.url}', quote=True)
-    stats['media_downloaded'] += 1
+def reply_videos(update: Update, context: CallbackContext, twitter_videos: list[sntwitter.Video]):
+    """Reply with videos."""
+    for video in twitter_videos:
+        # Find video variant with the best bitrate
+        video = max((video_variant for video_variant in video.variants
+                    if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
+        log_handling(update, 'info', 'Selected video variant: ' + str(video))
+        try:
+            request = requests.get(video.url, stream=True)
+            request.raise_for_status()
+            if (video_size := int(request.headers['content-length'])) <= constants.MAX_FILESIZE_DOWNLOAD:
+                # Try sending by url
+                update.message.reply_video(video=video.url, quote=True)
+                log_handling(update, 'info', 'Sent video (download)')
+            elif video_size <= constants.MAX_FILESIZE_UPLOAD:
+                log_handling(update, 'info', f'Video size ({video_size}) is bigger than '
+                                            f'MAX_FILESIZE_UPLOAD, using upload method')
+                message = update.message.reply_text(
+                    'Video is too large for direct download\nUsing upload method '
+                    '(this might take a bit longer)',
+                    quote=True)
+                with TemporaryFile() as tf:
+                    log_handling(update, 'info', f'Downloading video (Content-length: '
+                                                f'{request.headers["Content-length"]})')
+                    for chunk in request.iter_content(chunk_size=128):
+                        tf.write(chunk)
+                    log_handling(update, 'info', 'Video downloaded, uploading to Telegram')
+                    tf.seek(0)
+                    update.message.reply_video(video=tf, quote=True, supports_streaming=True)
+                    log_handling(update, 'info', 'Sent video (upload)')
+                message.delete()
+            else:
+                log_handling(update, 'info', 'Video is too large, sending direct link')
+                update.message.reply_text(f'Video is too large for Telegram upload. Direct video link:\n'
+                                        f'{video.url}', quote=True)
+        except (requests.HTTPError, KeyError, telegram.error.BadRequest, requests.exceptions.ConnectionError) as exc:
+            log_handling(update, 'info', f'{exc.__class__.__qualname__}: {exc}')
+            log_handling(update, 'info', 'Error occurred when trying to send video, sending direct link')
+            update.message.reply_text(f'Error occurred when trying to send video. Direct video link:\n'
+                                    f'{video.url}', quote=True)
+        context.bot_data['stats']['media_downloaded'] += 1
 
 
 # TODO: use LoggerAdapter instead
@@ -212,16 +210,18 @@ def help_command(update: Update, context: CallbackContext) -> None:
 
 def stats_command(update: Update, context: CallbackContext) -> None:
     """Send stats when the command /stats is issued."""
-    logger.info(f'Sent stats: {stats}')
-    update.message.reply_markdown_v2(f'*Bot stats:*\nMessages handled: *{stats.get("messages_handled")}*'
-                                     f'\nMedia downloaded: *{stats.get("media_downloaded")}*')
+    if not 'stats' in context.bot_data:
+        context.bot_data['stats'] = {'messages_handled': 0, 'media_downloaded': 0}
+        logger.info('Initialized stats')
+    logger.info(f'Sent stats: {context.bot_data["stats"]}')
+    update.message.reply_markdown_v2(f'*Bot stats:*\nMessages handled: *{context.bot_data["stats"].get("messages_handled")}*'
+                                     f'\nMedia downloaded: *{context.bot_data["stats"].get("media_downloaded")}*')
 
 
 def reset_stats_command(update: Update, context: CallbackContext) -> None:
     """Reset stats when the command /resetstats is issued."""
-    global stats
     stats = {'messages_handled': 0, 'media_downloaded': 0}
-    write_stats()
+    context.bot_data['stats'] = stats
     logger.info("Bot stats have been reset")
     update.message.reply_text("Bot stats have been reset")
 
@@ -237,7 +237,10 @@ def deny_access(update: Update, context: CallbackContext) -> None:
 def handle_message(update: Update, context: CallbackContext) -> None:
     """Handle the user message. Reply with found supported media."""
     log_handling(update, 'info', 'Received message: ' + update.message.text.replace("\n", ""))
-    stats['messages_handled'] += 1
+    if not 'stats' in context.bot_data:
+        context.bot_data['stats'] = {'messages_handled': 0, 'media_downloaded': 0}
+        logger.info('Initialized stats')
+    context.bot_data['stats']['messages_handled'] += 1
 
     if tweet_ids := extract_tweet_ids(update):
         log_handling(update, 'info', f'Found Tweet IDs {tweet_ids} in message')
@@ -257,11 +260,11 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         except (snscrape.base.ScraperException, KeyError, StopIteration) as exc:
             error_class_name = ".".join([exc.__class__.__module__, exc.__class__.__qualname__])
             log_handling(update, 'warning', f'Scraper exception {error_class_name}: {str(exc)}')
-            update.effective_message.reply_text('Scraper error (is tweet available?)')
+            update.effective_message.reply_text('Scraper error occurred. Is the tweet available?')
             return
         if tweet and tweet.media:
             log_handling(update, 'debug', f'tweet.media: {tweet.media}')
-            if reply_media(update, tweet.media):
+            if reply_media(update, context, tweet.media):
                 found_media = True
             else:
                 log_handling(update, 'info', f'Found unsupported media: {tweet.media[0].__class__.__name__}')
@@ -271,16 +274,12 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         update.message.reply_text('No supported media found', quote=True)
 
 
-def write_stats() -> None:
-    """Write bot statistics to a file."""
-    with open('stats.json', 'w+', encoding="utf8") as _stats_file:
-        json.dump(stats, _stats_file)
-
-
 def main() -> None:
     """Start the bot."""
+    persistence = PicklePersistence(filename='data/persistence')
+
     # Create the Updater and pass it your bot's token.
-    updater = Updater(BOT_TOKEN)
+    updater = Updater(BOT_TOKEN, persistence=persistence)
 
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
@@ -340,9 +339,6 @@ def main() -> None:
     # SIGTERM or SIGABRT. This should be used most of the time, since
     # start_polling() is non-blocking and will stop the bot gracefully.
     updater.idle()
-
-    # Write bot statistics to a file
-    write_stats()
 
 
 if __name__ == '__main__':
