@@ -157,6 +157,10 @@ def error_handler(update: object, context: CallbackContext) -> None:
 
     # Log the error before we do anything else, so we can see it even if something breaks.
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
+    
+    # if there is no update, don't send an error report (probably a network error, happens sometimes)
+    if update is None:
+        return
 
     # traceback.format_exception returns the usual python message about an exception, but as a
     # list of strings rather than a single string, so we have to join them together.
@@ -248,6 +252,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         log_handling(update, 'info', 'No supported tweet link found')
         update.message.reply_text('No supported tweet link found', quote=True)
         return
+    found_tweets = False
     found_media = False
     for tweet_id in tweet_ids:
         # Scrape a single tweet by ID
@@ -257,19 +262,32 @@ def handle_message(update: Update, context: CallbackContext) -> None:
             tweet_scraper = sntwitter.TwitterTweetScraper(tweet_id, mode=sntwitter.TwitterTweetScraperMode.SINGLE)
             tweet_scraper._retries = 2
             tweet = tweet_scraper.get_items().__next__()
-        except (snscrape.base.ScraperException, KeyError, StopIteration) as exc:
+        except StopIteration:
+            log_handling(update, 'warning', f'Tweet {tweet_id} not found')
+            update.effective_message.reply_text(f'Tweet {tweet_id} not found', quote=True)
+            continue
+        except (snscrape.base.ScraperException, KeyError) as exc:
             error_class_name = ".".join([exc.__class__.__module__, exc.__class__.__qualname__])
             log_handling(update, 'warning', f'Scraper exception {error_class_name}: {str(exc)}')
             update.effective_message.reply_text('Scraper error occurred. Is the tweet available?')
             return
-        if tweet and tweet.media:
-            log_handling(update, 'debug', f'tweet.media: {tweet.media}')
-            if reply_media(update, context, tweet.media):
-                found_media = True
+        if isinstance(tweet, sntwitter.Tombstone):
+            log_handling(update, 'warning', f'Tweet {tweet_id} cannot be accessed. Reason: {tweet.text}')
+            update.effective_message.reply_text(f'Tweet {tweet_id} cannot be accessed.\nReason: {tweet.text}', quote=True)
+            continue
+        if tweet:
+            found_tweets = True
+            if tweet.media:
+                log_handling(update, 'debug', f'tweet.media: {tweet.media}')
+                if reply_media(update, context, tweet.media):
+                    found_media = True
+                else:
+                    log_handling(update, 'info', f'Found unsupported media: {tweet.media[0].__class__.__name__}')
             else:
-                log_handling(update, 'info', f'Found unsupported media: {tweet.media[0].__class__.__name__}')
+                log_handling(update, 'info', f'Tweet {tweet_id} has no media')
+                update.effective_message.reply_text(f'Tweet {tweet_id} has no media', quote=True)
 
-    if not found_media:
+    if found_tweets and not found_media:
         log_handling(update, 'info', 'No supported media found')
         update.message.reply_text('No supported media found', quote=True)
 
