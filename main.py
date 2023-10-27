@@ -3,10 +3,10 @@ import json
 import logging
 import traceback
 from io import StringIO
-from os import getpid, kill
+from os import getpid, kill, makedirs
 from signal import SIGTERM
 from tempfile import TemporaryFile
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.parse import urlsplit
 
 import requests
@@ -15,8 +15,6 @@ try:
     import re2 as re
 except ImportError:
     import re
-import snscrape.base
-import snscrape.modules.twitter as sntwitter
 import telegram.error
 from telegram import Update, InputMediaDocument, InputMediaAnimation, constants, BotCommand, BotCommandScopeChat
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, PicklePersistence
@@ -48,11 +46,17 @@ def extract_tweet_ids(update: Update) -> Optional[list[str]]:
     return tweet_ids or None
 
 
+def scrape_media(tweet_id: int) -> list[dict]:
+    r = requests.get(f'https://api.vxtwitter.com/Twitter/status/{tweet_id}')
+    r.raise_for_status()
+    return r.json()['media_extended']
+
+
 def reply_media(update: Update, context: CallbackContext, tweet_media: list) -> bool:
     """Reply to message with supported media."""
-    photos = [media for media in tweet_media if isinstance(media, sntwitter.Photo)]
-    gifs = [media for media in tweet_media if isinstance(media, sntwitter.Gif)]
-    videos = [media for media in tweet_media if isinstance(media, sntwitter.Video)]
+    photos = [media for media in tweet_media if media["type"] == "image"]
+    gifs = [media for media in tweet_media if media["type"] == "gif"]
+    videos = [media for media in tweet_media if media["type"] == "video"]
     if photos:
         reply_photos(update, context, photos)
     if gifs:
@@ -62,12 +66,13 @@ def reply_media(update: Update, context: CallbackContext, tweet_media: list) -> 
     return bool(photos or gifs or videos)
 
 
-def reply_photos(update: Update, context: CallbackContext, twitter_photos: list[sntwitter.Photo]) -> None:
+def reply_photos(update: Update, context: CallbackContext, twitter_photos: list[dict]) -> None:
     """Reply with photo group."""
     photo_group = []
     for photo in twitter_photos:
-        log_handling(update, 'info', f'Photo[{len(photo_group)}] url: {photo.fullUrl}')
-        parsed_url = urlsplit(photo.fullUrl)
+        photo_url = photo['url']
+        log_handling(update, 'info', f'Photo[{len(photo_group)}] url: {photo_url}')
+        parsed_url = urlsplit(photo_url)
 
         # Try changing requested quality to 'orig'
         try:
@@ -77,35 +82,32 @@ def reply_photos(update: Update, context: CallbackContext, twitter_photos: list[
             photo_group.append(InputMediaDocument(media=new_url))
         except requests.HTTPError:
             log_handling(update, 'info', 'orig quality not available, using original url')
-            photo_group.append(InputMediaDocument(media=photo.fullUrl))
+            photo_group.append(InputMediaDocument(media=photo_url))
     update.message.reply_media_group(photo_group, quote=True)
     log_handling(update, 'info', f'Sent photo group (len {len(photo_group)})')
     context.bot_data['stats']['media_downloaded'] += len(photo_group)
 
 
-def reply_gifs(update: Update, context: CallbackContext, twitter_gifs: list[sntwitter.Gif]):
+def reply_gifs(update: Update, context: CallbackContext, twitter_gifs: list[dict]):
     """Reply with GIF animations."""
     for gif in twitter_gifs:
-        gif_url = gif.variants[0].url
+        gif_url = gif['url']
         log_handling(update, 'info', f'Gif url: {gif_url}')
         update.message.reply_animation(animation=gif_url, quote=True)
         log_handling(update, 'info', 'Sent gif')
         context.bot_data['stats']['media_downloaded'] += 1
 
 
-def reply_videos(update: Update, context: CallbackContext, twitter_videos: list[sntwitter.Video]):
+def reply_videos(update: Update, context: CallbackContext, twitter_videos: list[dict]):
     """Reply with videos."""
     for video in twitter_videos:
-        # Find video variant with the best bitrate
-        video = max((video_variant for video_variant in video.variants
-                    if video_variant.contentType == 'video/mp4'), key=lambda x: x.bitrate)
-        log_handling(update, 'info', 'Selected video variant: ' + str(video))
+        video_url = video['url']
         try:
-            request = requests.get(video.url, stream=True)
+            request = requests.get(video_url, stream=True)
             request.raise_for_status()
-            if (video_size := int(request.headers['content-length'])) <= constants.MAX_FILESIZE_DOWNLOAD:
+            if (video_size := int(request.headers['Content-Length'])) <= constants.MAX_FILESIZE_DOWNLOAD:
                 # Try sending by url
-                update.message.reply_video(video=video.url, quote=True)
+                update.message.reply_video(video=video_url, quote=True)
                 log_handling(update, 'info', 'Sent video (download)')
             elif video_size <= constants.MAX_FILESIZE_UPLOAD:
                 log_handling(update, 'info', f'Video size ({video_size}) is bigger than '
@@ -127,12 +129,12 @@ def reply_videos(update: Update, context: CallbackContext, twitter_videos: list[
             else:
                 log_handling(update, 'info', 'Video is too large, sending direct link')
                 update.message.reply_text(f'Video is too large for Telegram upload. Direct video link:\n'
-                                        f'{video.url}', quote=True)
+                                        f'{video_url}', quote=True)
         except (requests.HTTPError, KeyError, telegram.error.BadRequest, requests.exceptions.ConnectionError) as exc:
             log_handling(update, 'info', f'{exc.__class__.__qualname__}: {exc}')
             log_handling(update, 'info', 'Error occurred when trying to send video, sending direct link')
-            update.message.reply_text(f'Error occurred when trying to send video. Direct video link:\n'
-                                    f'{video.url}', quote=True)
+            update.message.reply_text(f'Error occurred when trying to send video. Direct link:\n'
+                                    f'{video_url}', quote=True)
         context.bot_data['stats']['media_downloaded'] += 1
 
 
@@ -252,40 +254,27 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         log_handling(update, 'info', 'No supported tweet link found')
         update.message.reply_text('No supported tweet link found', quote=True)
         return
-    found_tweets = False
     found_media = False
+    found_tweets = False
     for tweet_id in tweet_ids:
         # Scrape a single tweet by ID
         log_handling(update, 'info', f'Scraping tweet ID {tweet_id}')
-        tweet = None
         try:
-            tweet_scraper = sntwitter.TwitterTweetScraper(tweet_id, mode=sntwitter.TwitterTweetScraperMode.SINGLE)
-            tweet_scraper._retries = 2
-            tweet = tweet_scraper.get_items().__next__()
-        except StopIteration:
-            log_handling(update, 'warning', f'Tweet {tweet_id} not found')
-            update.effective_message.reply_text(f'Tweet {tweet_id} not found', quote=True)
-            continue
-        except (snscrape.base.ScraperException, KeyError) as exc:
-            error_class_name = ".".join([exc.__class__.__module__, exc.__class__.__qualname__])
-            log_handling(update, 'warning', f'Scraper exception {error_class_name}: {str(exc)}')
-            update.effective_message.reply_text('Scraper error occurred. Is the tweet available?')
-            return
-        if isinstance(tweet, sntwitter.Tombstone):
-            log_handling(update, 'warning', f'Tweet {tweet_id} cannot be accessed. Reason: {tweet.text}')
-            update.effective_message.reply_text(f'Tweet {tweet_id} cannot be accessed.\nReason: {tweet.text}', quote=True)
-            continue
-        if tweet:
+            media = scrape_media(tweet_id)
             found_tweets = True
-            if tweet.media:
-                log_handling(update, 'debug', f'tweet.media: {tweet.media}')
-                if reply_media(update, context, tweet.media):
+            if media:
+                log_handling(update, 'info', f'tweet media: {media}')
+                if reply_media(update, context, media):
                     found_media = True
                 else:
-                    log_handling(update, 'info', f'Found unsupported media: {tweet.media[0].__class__.__name__}')
+                    log_handling(update, 'info', f'Found unsupported media: {media[0]["type"]}')
             else:
                 log_handling(update, 'info', f'Tweet {tweet_id} has no media')
                 update.effective_message.reply_text(f'Tweet {tweet_id} has no media', quote=True)
+        except Exception:
+            log_handling(update, 'error', f'Error occurred when scraping tweet {tweet_id}: {traceback.format_exc()}')
+            update.effective_message.reply_text(f'Error handling tweet {tweet_id}', quote=True)
+            
 
     if found_tweets and not found_media:
         log_handling(update, 'info', 'No supported media found')
@@ -294,6 +283,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 
 def main() -> None:
     """Start the bot."""
+    makedirs('data', exist_ok=True)  # Create data
     persistence = PicklePersistence(filename='data/persistence')
 
     # Create the Updater and pass it your bot's token.
@@ -351,7 +341,7 @@ def main() -> None:
     dispatcher.add_error_handler(error_handler)
 
     # Start the Bot
-    updater.start_polling()
+    updater.start_polling(drop_pending_updates=True)
 
     # Run the bot until you press Ctrl-C or the process receives SIGINT,
     # SIGTERM or SIGABRT. This should be used most of the time, since
