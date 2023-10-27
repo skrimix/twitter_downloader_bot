@@ -3,10 +3,9 @@ import json
 import logging
 import traceback
 from io import StringIO
-from os import getpid, kill, makedirs
-from signal import SIGTERM
+from os import makedirs
 from tempfile import TemporaryFile
-from typing import Optional, Tuple
+from typing import Optional
 from urllib.parse import urlsplit
 
 import requests
