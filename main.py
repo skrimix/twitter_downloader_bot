@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def extract_tweet_ids(update: Update) -> Optional[list[str]]:
     """Extract tweet IDs from message."""
-    text = update.message.text
+    text = update.effective_message.text
 
     # For t.co links
     unshortened_links = ''
@@ -82,7 +82,7 @@ def reply_photos(update: Update, context: CallbackContext, twitter_photos: list[
         except requests.HTTPError:
             log_handling(update, 'info', 'orig quality not available, using original url')
             photo_group.append(InputMediaDocument(media=photo_url))
-    update.message.reply_media_group(photo_group, quote=True)
+    update.effective_message.reply_media_group(photo_group, quote=True)
     log_handling(update, 'info', f'Sent photo group (len {len(photo_group)})')
     context.bot_data['stats']['media_downloaded'] += len(photo_group)
 
@@ -92,7 +92,7 @@ def reply_gifs(update: Update, context: CallbackContext, twitter_gifs: list[dict
     for gif in twitter_gifs:
         gif_url = gif['url']
         log_handling(update, 'info', f'Gif url: {gif_url}')
-        update.message.reply_animation(animation=gif_url, quote=True)
+        update.effective_message.reply_animation(animation=gif_url, quote=True)
         log_handling(update, 'info', 'Sent gif')
         context.bot_data['stats']['media_downloaded'] += 1
 
@@ -106,12 +106,12 @@ def reply_videos(update: Update, context: CallbackContext, twitter_videos: list[
             request.raise_for_status()
             if (video_size := int(request.headers['Content-Length'])) <= constants.MAX_FILESIZE_DOWNLOAD:
                 # Try sending by url
-                update.message.reply_video(video=video_url, quote=True)
+                update.effective_message.reply_video(video=video_url, quote=True)
                 log_handling(update, 'info', 'Sent video (download)')
             elif video_size <= constants.MAX_FILESIZE_UPLOAD:
                 log_handling(update, 'info', f'Video size ({video_size}) is bigger than '
                                             f'MAX_FILESIZE_UPLOAD, using upload method')
-                message = update.message.reply_text(
+                message = update.effective_message.reply_text(
                     'Video is too large for direct download\nUsing upload method '
                     '(this might take a bit longer)',
                     quote=True)
@@ -122,17 +122,17 @@ def reply_videos(update: Update, context: CallbackContext, twitter_videos: list[
                         tf.write(chunk)
                     log_handling(update, 'info', 'Video downloaded, uploading to Telegram')
                     tf.seek(0)
-                    update.message.reply_video(video=tf, quote=True, supports_streaming=True)
+                    update.effective_message.reply_video(video=tf, quote=True, supports_streaming=True)
                     log_handling(update, 'info', 'Sent video (upload)')
                 message.delete()
             else:
                 log_handling(update, 'info', 'Video is too large, sending direct link')
-                update.message.reply_text(f'Video is too large for Telegram upload. Direct video link:\n'
+                update.effective_message.reply_text(f'Video is too large for Telegram upload. Direct video link:\n'
                                         f'{video_url}', quote=True)
         except (requests.HTTPError, KeyError, telegram.error.BadRequest, requests.exceptions.ConnectionError) as exc:
             log_handling(update, 'info', f'{exc.__class__.__qualname__}: {exc}')
             log_handling(update, 'info', 'Error occurred when trying to send video, sending direct link')
-            update.message.reply_text(f'Error occurred when trying to send video. Direct link:\n'
+            update.effective_message.reply_text(f'Error occurred when trying to send video. Direct link:\n'
                                     f'{video_url}', quote=True)
         context.bot_data['stats']['media_downloaded'] += 1
 
@@ -202,7 +202,7 @@ def start(update: Update, context: CallbackContext) -> None:
     """Send a message when the command /start is issued."""
     log_handling(update, 'info', f'Received /start command from userId {update.effective_user.id}')
     user = update.effective_user
-    update.message.reply_markdown_v2(
+    update.effective_message.reply_markdown_v2(
         fr'Hi {user.mention_markdown_v2()}\!' +
         '\nSend tweet link here and I will download media in the best available quality for you'
     )
@@ -210,7 +210,7 @@ def start(update: Update, context: CallbackContext) -> None:
 
 def help_command(update: Update, context: CallbackContext) -> None:
     """Send a message when the command /help is issued."""
-    update.message.reply_text('Send tweet link here and I will download media in the best available quality for you')
+    update.effective_message.reply_text('Send tweet link here and I will download media in the best available quality for you')
 
 
 def stats_command(update: Update, context: CallbackContext) -> None:
@@ -219,7 +219,7 @@ def stats_command(update: Update, context: CallbackContext) -> None:
         context.bot_data['stats'] = {'messages_handled': 0, 'media_downloaded': 0}
         logger.info('Initialized stats')
     logger.info(f'Sent stats: {context.bot_data["stats"]}')
-    update.message.reply_markdown_v2(f'*Bot stats:*\nMessages handled: *{context.bot_data["stats"].get("messages_handled")}*'
+    update.effective_message.reply_markdown_v2(f'*Bot stats:*\nMessages handled: *{context.bot_data["stats"].get("messages_handled")}*'
                                      f'\nMedia downloaded: *{context.bot_data["stats"].get("media_downloaded")}*')
 
 
@@ -228,7 +228,7 @@ def reset_stats_command(update: Update, context: CallbackContext) -> None:
     stats = {'messages_handled': 0, 'media_downloaded': 0}
     context.bot_data['stats'] = stats
     logger.info("Bot stats have been reset")
-    update.message.reply_text("Bot stats have been reset")
+    update.effective_message.reply_text("Bot stats have been reset")
 
 
 def deny_access(update: Update, context: CallbackContext) -> None:
@@ -236,12 +236,12 @@ def deny_access(update: Update, context: CallbackContext) -> None:
     log_handling(update, 'info',
                  f'Access denied to {update.effective_user.full_name} (@{update.effective_user.username}),'
                  f' userId {update.effective_user.id}')
-    update.message.reply_text(f'Access denied. Your id ({update.effective_user.id}) is not whitelisted')
+    update.effective_message.reply_text(f'Access denied. Your id ({update.effective_user.id}) is not whitelisted')
 
 
 def handle_message(update: Update, context: CallbackContext) -> None:
     """Handle the user message. Reply with found supported media."""
-    log_handling(update, 'info', 'Received message: ' + update.message.text.replace("\n", ""))
+    log_handling(update, 'info', 'Received message: ' + update.effective_message.text.replace("\n", ""))
     if not 'stats' in context.bot_data:
         context.bot_data['stats'] = {'messages_handled': 0, 'media_downloaded': 0}
         logger.info('Initialized stats')
@@ -251,7 +251,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         log_handling(update, 'info', f'Found Tweet IDs {tweet_ids} in message')
     else:
         log_handling(update, 'info', 'No supported tweet link found')
-        update.message.reply_text('No supported tweet link found', quote=True)
+        update.effective_message.reply_text('No supported tweet link found', quote=True)
         return
     found_media = False
     found_tweets = False
@@ -277,7 +277,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
 
     if found_tweets and not found_media:
         log_handling(update, 'info', 'No supported media found')
-        update.message.reply_text('No supported media found', quote=True)
+        update.effective_message.reply_text('No supported media found', quote=True)
 
 
 def main() -> None:
@@ -340,7 +340,7 @@ def main() -> None:
     dispatcher.add_error_handler(error_handler)
 
     # Start the Bot
-    updater.start_polling(drop_pending_updates=True)
+    updater.start_polling()
 
     # Run the bot until you press Ctrl-C or the process receives SIGINT,
     # SIGTERM or SIGABRT. This should be used most of the time, since
