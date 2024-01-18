@@ -40,7 +40,7 @@ def extract_tweet_ids(update: Update) -> Optional[list[str]]:
             log_handling(update, 'info', f'Could not unshorten link [https://{link}]')
 
     # Parse IDs from received text
-    tweet_ids = re.findall(r"twitter\.com/.{1,15}/(?:web|status(?:es)?)/([0-9]{1,20})", text + unshortened_links)
+    tweet_ids = re.findall(r"(?:twitter|x)\.com/.{1,15}/(?:web|status(?:es)?)/([0-9]{1,20})", text + unshortened_links)
     tweet_ids = list(dict.fromkeys(tweet_ids))
     return tweet_ids or None
 
