@@ -4,6 +4,7 @@ import logging
 import traceback
 from io import StringIO
 from os import makedirs
+from os import makedirs
 from tempfile import TemporaryFile
 from typing import Optional
 from urllib.parse import urlsplit
@@ -23,6 +24,9 @@ from config import BOT_TOKEN, DEVELOPER_ID, IS_BOT_PRIVATE
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class APIException(Exception):
+    pass
 
 
 def extract_tweet_ids(update: Update) -> Optional[list[str]]:
@@ -48,8 +52,14 @@ def extract_tweet_ids(update: Update) -> Optional[list[str]]:
 def scrape_media(tweet_id: int) -> list[dict]:
     r = requests.get(f'https://api.vxtwitter.com/Twitter/status/{tweet_id}')
     r.raise_for_status()
-    return r.json()['media_extended']
-
+    try:
+        return r.json()['media_extended']
+    except requests.exceptions.JSONDecodeError: # the api likely returned an HTML page, try looking for an error message
+        # <meta content="{message}" property="og:description" />
+        if match := re.search(r'<meta content="(.*?)" property="og:description" />', r.text):
+            raise APIException(f'API returned error: {html.unescape(match.group(1))}')
+        raise
+        
 
 def reply_media(update: Update, context: CallbackContext, tweet_media: list) -> bool:
     """Reply to message with supported media."""
@@ -191,7 +201,7 @@ def error_handler(update: object, context: CallbackContext) -> None:
     )
     string_out = StringIO(message)
     context.bot.send_document(chat_id=DEVELOPER_ID, document=string_out, filename='error_report.txt',
-                              caption='#error_report\nAn exception was raised during runtime\n')
+                              caption='#error_report\nAn exception was raised in runtime\n')
 
     if update:
         error_class_name = ".".join([context.error.__class__.__module__, context.error.__class__.__qualname__])
@@ -270,6 +280,9 @@ def handle_message(update: Update, context: CallbackContext) -> None:
             else:
                 log_handling(update, 'info', f'Tweet {tweet_id} has no media')
                 update.effective_message.reply_text(f'Tweet {tweet_id} has no media', quote=True)
+        except APIException as exc:
+            log_handling(update, 'error', f'Error occurred when scraping tweet {tweet_id}: {traceback.format_exc()}')
+            update.effective_message.reply_text(f'Error occurred when scraping tweet {tweet_id}\n{exc}', quote=True)
         except Exception:
             log_handling(update, 'error', f'Error occurred when scraping tweet {tweet_id}: {traceback.format_exc()}')
             update.effective_message.reply_text(f'Error handling tweet {tweet_id}', quote=True)
@@ -278,6 +291,10 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     if found_tweets and not found_media:
         log_handling(update, 'info', 'No supported media found')
         update.effective_message.reply_text('No supported media found', quote=True)
+
+def handle_channel_post(update: Update, context: CallbackContext) -> None:
+    log_handling(update, 'info', f'Leaving channel {update.effective_chat.id}')
+    update.effective_chat.leave()
 
 
 def main() -> None:
@@ -321,6 +338,9 @@ def main() -> None:
         # on different commands - answer in Telegram
         dispatcher.add_handler(CommandHandler("start", start))
         dispatcher.add_handler(CommandHandler("help", help_command))
+        
+        # on channel post - leave channel
+        dispatcher.add_handler(MessageHandler(Filters.chat_type.channel, handle_channel_post))
 
         # on non command i.e message - handle the message
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message, run_async=True))
